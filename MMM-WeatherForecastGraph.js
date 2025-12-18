@@ -87,13 +87,14 @@ Module.register("MMM-WeatherForecastGraph", {
       wrapper.appendChild(container);
     }
 
-    // Render charts after DOM is updated using requestAnimationFrame
+    // Render charts after DOM fade animation completes
+    // Use updateFadeSpeed + buffer to ensure DOM is fully ready
     if (!this.renderPending) {
       this.renderPending = true;
-      requestAnimationFrame(() => {
+      setTimeout(() => {
         this.renderPending = false;
         this.renderCharts();
-      });
+      }, this.config.updateFadeSpeed + 100);
     }
 
     return wrapper;
