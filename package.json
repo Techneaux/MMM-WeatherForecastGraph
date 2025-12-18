@@ -3,6 +3,11 @@
   "version": "1.0.0",
   "description": "MagicMirror² module for displaying 48-hour weather forecast graphs",
   "main": "MMM-WeatherForecastGraph.js",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Techneaux/MMM-WeatherForecastGraph.git"
+  },
+  "author": "Techneaux",
   "keywords": [
     "MagicMirror",
     "weather",
@@ -11,7 +16,12 @@
     "forecast"
   ],
   "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/Techneaux/MMM-WeatherForecastGraph/issues"
+  },
+  "homepage": "https://github.com/Techneaux/MMM-WeatherForecastGraph#readme",
   "dependencies": {
-    "chart.js": "^4.4.0"
+    "chart.js": "^4.4.0",
+    "chartjs-plugin-annotation": "^3.0.1"
   }
 }

@@ -1,0 +1,607 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MMM-WeatherForecastGraph Test</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.0.1/dist/chartjs-plugin-annotation.min.js"></script>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+    body {
+      background: #000;
+      color: #999;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      margin: 0;
+      padding: 20px;
+      min-height: 100vh;
+    }
+    .controls {
+      margin-bottom: 20px;
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    .controls label {
+      color: #ccc;
+    }
+    .controls input {
+      background: #222;
+      border: 1px solid #444;
+      color: #fff;
+      padding: 8px 12px;
+      border-radius: 4px;
+      width: 120px;
+    }
+    .controls button {
+      background: #4682B4;
+      border: none;
+      color: #fff;
+      padding: 8px 16px;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    .controls button:hover {
+      background: #5a9fd4;
+    }
+    .status {
+      color: #666;
+      font-size: 14px;
+      margin-left: 10px;
+    }
+    .status.error {
+      color: #ff6347;
+    }
+    .status.success {
+      color: #32cd32;
+    }
+    .weather-graph-wrapper {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      margin: 0 auto;
+      width: 800px;
+    }
+    .chart-container {
+      background: rgba(0, 0, 0, 0.2);
+      border-radius: 5px;
+      padding: 5px;
+    }
+    .dimmed {
+      color: #666;
+      font-size: 14px;
+      text-align: center;
+      padding: 20px;
+    }
+  </style>
+</head>
+<body>
+  <div class="controls">
+    <label>Latitude:</label>
+    <input type="text" id="lat" value="40.7128" placeholder="e.g., 40.7128">
+    <label>Longitude:</label>
+    <input type="text" id="lon" value="-74.0060" placeholder="e.g., -74.0060">
+    <button onclick="fetchWeatherData()">Fetch Weather</button>
+    <span id="status" class="status"></span>
+  </div>
+
+  <div class="weather-graph-wrapper" id="chartWrapper">
+    <div class="dimmed">Enter coordinates and click "Fetch Weather" to load data...</div>
+  </div>
+
+  <script>
+    // Configuration (matching module defaults)
+    const config = {
+      width: 800,
+      height: 450,
+      showTemperature: true,
+      showFeelsLike: true,
+      showWind: true,
+      showPrecipitation: true,
+      showGridLines: true,
+      animateCharts: true,
+      hoursToShow: 48,
+      temperatureColor: "#FFA500",
+      feelsLikeColor: "#FF6347",
+      windColor: "#4682B4",
+      gustColor: "#1E3A5F",
+      precipitationColor: "#00CED1",
+      precipitationAmountColor: "#1E90FF"
+    };
+
+    // Store raw precipitation periods for spanning bars
+    let precipitationPeriods = [];
+
+    let charts = {};
+
+    function setStatus(message, type = '') {
+      const status = document.getElementById('status');
+      status.textContent = message;
+      status.className = 'status ' + type;
+    }
+
+    async function fetchWeatherData() {
+      const lat = document.getElementById('lat').value.trim();
+      const lon = document.getElementById('lon').value.trim();
+
+      if (!lat || !lon) {
+        setStatus('Please enter latitude and longitude', 'error');
+        return;
+      }
+
+      setStatus('Fetching location data...');
+
+      try {
+        // Step 1: Get grid coordinates from points endpoint
+        const pointsUrl = `https://api.weather.gov/points/${lat},${lon}`;
+        const pointsResponse = await fetch(pointsUrl, {
+          headers: { 'User-Agent': 'MMM-WeatherForecastGraph-Test' }
+        });
+
+        if (!pointsResponse.ok) {
+          throw new Error(`Points API error: ${pointsResponse.status}`);
+        }
+
+        const pointsData = await pointsResponse.json();
+        const forecastGridDataUrl = pointsData.properties.forecastGridData;
+
+        setStatus('Fetching hourly forecast...');
+
+        // Step 2: Get hourly forecast data
+        const gridResponse = await fetch(forecastGridDataUrl, {
+          headers: { 'User-Agent': 'MMM-WeatherForecastGraph-Test' }
+        });
+
+        if (!gridResponse.ok) {
+          throw new Error(`Grid API error: ${gridResponse.status}`);
+        }
+
+        const gridData = await gridResponse.json();
+
+        // Process the data into hourly format
+        const hourlyData = processWeatherGovData(gridData.properties);
+
+        setStatus(`Loaded ${hourlyData.length} hours of data`, 'success');
+
+        // Render charts
+        renderCharts(hourlyData);
+
+      } catch (error) {
+        console.error('Error fetching weather:', error);
+        setStatus(`Error: ${error.message}`, 'error');
+      }
+    }
+
+    function processWeatherGovData(properties) {
+      // Get the next 48 hours of data
+      const now = new Date();
+      const hourlyData = [];
+
+      // Weather.gov returns data as time series with validTime ranges
+      // We need to expand these into hourly points
+
+      const tempValues = expandTimeSeries(properties.temperature?.values || []);
+      const feelsLikeValues = expandTimeSeries(properties.apparentTemperature?.values || []);
+      const windSpeedValues = expandTimeSeries(properties.windSpeed?.values || []);
+      const windGustValues = expandTimeSeries(properties.windGust?.values || []);
+      const popValues = expandTimeSeries(properties.probabilityOfPrecipitation?.values || []);
+
+      // Extract raw precipitation periods (don't expand - keep original time spans)
+      precipitationPeriods = extractPrecipitationPeriods(
+        properties.quantitativePrecipitation?.values || [],
+        now
+      );
+
+      // Find the starting hour (current hour)
+      const startHour = new Date(now);
+      startHour.setMinutes(0, 0, 0);
+
+      for (let i = 0; i < config.hoursToShow; i++) {
+        const targetTime = new Date(startHour.getTime() + i * 3600000);
+        const isoTime = targetTime.toISOString();
+
+        // Find values for this hour
+        const temp = findValueAtTime(tempValues, targetTime);
+        const feelsLike = findValueAtTime(feelsLikeValues, targetTime);
+        const windSpeed = findValueAtTime(windSpeedValues, targetTime);
+        const windGust = findValueAtTime(windGustValues, targetTime);
+        const pop = findValueAtTime(popValues, targetTime);
+
+        hourlyData.push({
+          dt: Math.floor(targetTime.getTime() / 1000),
+          temp: celsiusToFahrenheit(temp),
+          feels_like: celsiusToFahrenheit(feelsLike),
+          wind_speed: kphToMph(windSpeed),
+          wind_gust: kphToMph(windGust),
+          pop: pop !== null ? pop / 100 : 0  // Convert to 0-1 range
+        });
+      }
+
+      return hourlyData;
+    }
+
+    function expandTimeSeries(values) {
+      // Weather.gov uses ISO 8601 duration format: "2024-01-01T00:00:00+00:00/PT1H"
+      const expanded = [];
+
+      for (const item of values) {
+        if (!item.validTime) continue;
+
+        const [startStr, durationStr] = item.validTime.split('/');
+        const startTime = new Date(startStr);
+        const hours = parseDuration(durationStr);
+
+        for (let h = 0; h < hours; h++) {
+          const time = new Date(startTime.getTime() + h * 3600000);
+          expanded.push({
+            time: time,
+            value: item.value
+          });
+        }
+      }
+
+      return expanded;
+    }
+
+    function parseDuration(duration) {
+      // Parse ISO 8601 duration like "PT1H", "PT3H", "PT6H"
+      const match = duration.match(/PT(\d+)H/);
+      return match ? parseInt(match[1], 10) : 1;
+    }
+
+    function findValueAtTime(expandedValues, targetTime) {
+      // Find the value that covers the target time
+      for (const item of expandedValues) {
+        if (item.time.getTime() <= targetTime.getTime() &&
+            targetTime.getTime() < item.time.getTime() + 3600000) {
+          return item.value;
+        }
+      }
+      // If not found, find closest before
+      let closest = null;
+      for (const item of expandedValues) {
+        if (item.time.getTime() <= targetTime.getTime()) {
+          closest = item.value;
+        }
+      }
+      return closest;
+    }
+
+    function celsiusToFahrenheit(celsius) {
+      if (celsius === null || celsius === undefined) return null;
+      return Math.round((celsius * 9/5) + 32);
+    }
+
+    function kphToMph(kph) {
+      if (kph === null || kph === undefined) return null;
+      return Math.round(kph * 0.621371);
+    }
+
+    function mmToInches(mm) {
+      if (mm === null || mm === undefined) return null;
+      return Math.round(mm * 0.0393701 * 100) / 100;  // 2 decimal places
+    }
+
+    function extractPrecipitationPeriods(values, now) {
+      // Extract precipitation periods that fall within our display window
+      const periods = [];
+      const startHour = new Date(now);
+      startHour.setMinutes(0, 0, 0);
+      const endTime = new Date(startHour.getTime() + config.hoursToShow * 3600000);
+
+      for (const item of values) {
+        if (!item.validTime || item.value === 0) continue;
+
+        const [startStr, durationStr] = item.validTime.split('/');
+        const periodStart = new Date(startStr);
+        const hours = parseDuration(durationStr);
+        const periodEnd = new Date(periodStart.getTime() + hours * 3600000);
+
+        // Check if this period overlaps with our display window
+        if (periodEnd <= startHour || periodStart >= endTime) continue;
+
+        // Clip to our display window
+        const displayStart = new Date(Math.max(periodStart.getTime(), startHour.getTime()));
+        const displayEnd = new Date(Math.min(periodEnd.getTime(), endTime.getTime()));
+
+        // Calculate hour indices for the chart
+        const startIndex = Math.floor((displayStart.getTime() - startHour.getTime()) / 3600000);
+        const endIndex = Math.floor((displayEnd.getTime() - startHour.getTime()) / 3600000);
+
+        periods.push({
+          startIndex,
+          endIndex,
+          startTime: displayStart,
+          endTime: displayEnd,
+          amount_mm: item.value,
+          amount_inches: mmToInches(item.value)
+        });
+      }
+
+      return periods;
+    }
+
+    function calculateChartHeight() {
+      let visibleCharts = 0;
+      if (config.showTemperature) visibleCharts++;
+      if (config.showWind) visibleCharts++;
+      if (config.showPrecipitation) visibleCharts++;
+      return visibleCharts > 0 ? Math.floor(config.height / visibleCharts) : config.height;
+    }
+
+    function destroyAllCharts() {
+      Object.keys(charts).forEach(key => {
+        if (charts[key]) {
+          charts[key].destroy();
+          charts[key] = null;
+        }
+      });
+    }
+
+    function formatHour(timestamp) {
+      if (timestamp == null || isNaN(timestamp)) return "--";
+      const date = new Date(timestamp * 1000);
+      if (isNaN(date.getTime())) return "--";
+      const hour = date.getHours();
+      // Show weekday abbreviation at midnight as day marker
+      if (hour === 0) {
+        const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+        return days[date.getDay()];
+      }
+      const ampm = hour >= 12 ? "p" : "a";
+      const hour12 = hour % 12 || 12;
+      return hour12 + ampm;
+    }
+
+    function getChartOptions(title) {
+      return {
+        responsive: false,
+        maintainAspectRatio: false,
+        animation: config.animateCharts ? {} : false,
+        plugins: {
+          legend: {
+            display: (title === "Temperature" && config.showFeelsLike) || title === "Wind",
+            position: "right",
+            labels: {
+              color: "#999",
+              font: { size: 10 },
+              boxWidth: 20,
+              padding: 5
+            }
+          },
+          title: {
+            display: true,
+            text: title,
+            color: "#999",
+            font: { size: 12 }
+          }
+        },
+        scales: {
+          x: {
+            grid: {
+              display: config.showGridLines,
+              color: "#333"
+            },
+            ticks: {
+              color: "#999",
+              maxTicksLimit: 12,
+              font: { size: 10 }
+            }
+          },
+          y: {
+            grid: {
+              display: config.showGridLines,
+              color: "#333"
+            },
+            ticks: {
+              color: "#999",
+              font: { size: 10 }
+            },
+            grace: '5%'
+          }
+        }
+      };
+    }
+
+    function renderCharts(hourlyData) {
+      destroyAllCharts();
+
+      const wrapper = document.getElementById('chartWrapper');
+      wrapper.innerHTML = '';
+
+      const chartHeight = calculateChartHeight();
+      const labels = hourlyData.map(h => formatHour(h.dt));
+
+      if (config.showTemperature) {
+        const container = document.createElement('div');
+        container.className = 'chart-container';
+        const canvas = document.createElement('canvas');
+        canvas.id = 'temp-chart';
+        canvas.width = config.width;
+        canvas.height = chartHeight;
+        container.appendChild(canvas);
+        wrapper.appendChild(container);
+
+        const datasets = [
+          {
+            label: "Temperature",
+            data: hourlyData.map(h => h.temp),
+            borderColor: config.temperatureColor,
+            backgroundColor: config.temperatureColor + "33",
+            tension: 0.3,
+            fill: true,
+            pointRadius: 0,
+            borderWidth: 2
+          }
+        ];
+
+        if (config.showFeelsLike) {
+          datasets.push({
+            label: "Feels Like",
+            data: hourlyData.map(h => h.feels_like),
+            borderColor: config.feelsLikeColor,
+            backgroundColor: "transparent",
+            tension: 0.3,
+            fill: false,
+            pointRadius: 0,
+            borderWidth: 2,
+            borderDash: [5, 5]
+          });
+        }
+
+        charts.temp = new Chart(canvas, {
+          type: "line",
+          data: { labels, datasets },
+          options: getChartOptions("Temperature")
+        });
+      }
+
+      if (config.showWind) {
+        const container = document.createElement('div');
+        container.className = 'chart-container';
+        const canvas = document.createElement('canvas');
+        canvas.id = 'wind-chart';
+        canvas.width = config.width;
+        canvas.height = chartHeight;
+        container.appendChild(canvas);
+        wrapper.appendChild(container);
+
+        charts.wind = new Chart(canvas, {
+          type: "bar",
+          data: {
+            labels,
+            datasets: [
+              {
+                label: "Wind Gust",
+                data: hourlyData.map(h => h.wind_gust || null),
+                backgroundColor: config.gustColor,
+                borderWidth: 0,
+                barPercentage: 0.9,
+                categoryPercentage: 0.9
+              },
+              {
+                label: "Wind Speed",
+                data: hourlyData.map(h => h.wind_speed),
+                backgroundColor: config.windColor,
+                borderWidth: 0,
+                barPercentage: 0.7,
+                categoryPercentage: 0.9
+              }
+            ]
+          },
+          options: getChartOptions("Wind")
+        });
+      }
+
+      if (config.showPrecipitation) {
+        const container = document.createElement('div');
+        container.className = 'chart-container';
+        const canvas = document.createElement('canvas');
+        canvas.id = 'precip-chart';
+        canvas.width = config.width;
+        canvas.height = chartHeight;
+        container.appendChild(canvas);
+        wrapper.appendChild(container);
+
+        // Build annotations for precipitation amount periods
+        const annotations = {};
+        // Fixed height for all precipitation boxes - label shows the amount
+        const fixedHeight = 30;
+
+        precipitationPeriods.forEach((period, idx) => {
+          annotations[`precip${idx}`] = {
+            type: 'box',
+            xMin: period.startIndex - 0.5,
+            xMax: period.endIndex - 0.5,
+            yMin: 0,
+            yMax: fixedHeight,
+            backgroundColor: config.precipitationAmountColor + '66',  // 40% opacity
+            borderColor: config.precipitationAmountColor,
+            borderWidth: 1,
+            label: {
+              display: period.amount_inches >= 0.05,
+              content: period.amount_inches.toFixed(2) + '"',
+              color: '#fff',
+              font: { size: 9, weight: 'bold' },
+              position: 'center'
+            }
+          };
+        });
+
+        const baseOptions = getChartOptions("Precipitation");
+        charts.precip = new Chart(canvas, {
+          type: "bar",
+          data: {
+            labels,
+            datasets: [
+              {
+                label: "Chance %",
+                data: hourlyData.map(h => (h.pop || 0) * 100),
+                backgroundColor: config.precipitationColor + '99',  // 60% opacity
+                borderWidth: 0,
+                barPercentage: 0.8,
+                categoryPercentage: 0.9
+              }
+            ]
+          },
+          options: {
+            ...baseOptions,
+            plugins: {
+              ...baseOptions.plugins,
+              legend: {
+                display: true,
+                position: "right",
+                labels: {
+                  color: "#999",
+                  font: { size: 10 },
+                  boxWidth: 20,
+                  padding: 5,
+                  generateLabels: function(chart) {
+                    const original = Chart.defaults.plugins.legend.labels.generateLabels(chart);
+                    // Add custom legend entry for precipitation amount
+                    if (precipitationPeriods.length > 0) {
+                      original.push({
+                        text: 'Amount',
+                        fillStyle: config.precipitationAmountColor + '66',
+                        strokeStyle: config.precipitationAmountColor,
+                        lineWidth: 1,
+                        hidden: false
+                      });
+                    }
+                    return original;
+                  }
+                }
+              },
+              annotation: {
+                annotations: annotations
+              }
+            },
+            scales: {
+              ...baseOptions.scales,
+              y: {
+                ...baseOptions.scales.y,
+                min: 0,
+                max: 100,
+                title: {
+                  display: true,
+                  text: 'Chance %',
+                  color: '#999',
+                  font: { size: 10 }
+                }
+              }
+            }
+          }
+        });
+      }
+    }
+
+    // Auto-load on page load with default coordinates
+    window.addEventListener('load', () => {
+      fetchWeatherData();
+    });
+  </script>
+</body>
+</html>

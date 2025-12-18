@@ -1,12 +1,16 @@
 /* MagicMirror² Module: MMM-WeatherForecastGraph
  * Displays 48-hour weather forecast graphs for temperature, wind, and precipitation.
- * Consumes data from OPENWEATHER_FORECAST_WEATHER_UPDATE notification.
+ * Fetches data directly from weather.gov API.
  */
 
 Module.register("MMM-WeatherForecastGraph", {
   defaults: {
-    width: 600,
-    height: 300,
+    latitude: null,
+    longitude: null,
+    updateInterval: 900000, // 15 minutes
+    units: "imperial", // or "metric"
+    width: 800,
+    height: 450,
     showTemperature: true,
     showFeelsLike: true,
     showWind: true,
@@ -19,26 +23,45 @@ Module.register("MMM-WeatherForecastGraph", {
     feelsLikeColor: "#FF6347",
     windColor: "#4682B4",
     gustColor: "#1E3A5F",
-    precipitationColor: "#00CED1"
+    precipitationColor: "#00CED1",
+    precipitationAmountColor: "#1E90FF"
   },
 
   weatherData: null,
+  precipitationPeriods: [],
   charts: {},
   // Flag to prevent duplicate chart renders during async DOM updates
   renderPending: false,
+  // Error message from API failures
+  errorMessage: null,
 
   getStyles: function () {
     return [this.file("MMM-WeatherForecastGraph.css")];
   },
 
   getScripts: function () {
-    return [this.file("node_modules/chart.js/dist/chart.umd.js")];
+    return [
+      this.file("node_modules/chart.js/dist/chart.umd.js"),
+      this.file("node_modules/chartjs-plugin-annotation/dist/chartjs-plugin-annotation.min.js")
+    ];
   },
 
   start: function () {
     Log.info("Starting module: " + this.name);
     // Validate config bounds
     this.config.hoursToShow = Math.max(1, Math.min(48, this.config.hoursToShow));
+
+    // Validate required config
+    if (!this.config.latitude || !this.config.longitude) {
+      Log.error(this.name + ": latitude and longitude are required in config");
+      return;
+    }
+
+    // Send config to node_helper to initiate data fetching
+    this.sendSocketNotification("CONFIG", {
+      ...this.config,
+      instanceId: this.identifier
+    });
   },
 
   suspend: function () {
@@ -53,9 +76,16 @@ Module.register("MMM-WeatherForecastGraph", {
     }
   },
 
-  notificationReceived: function (notification, payload, sender) {
-    if (notification === "OPENWEATHER_FORECAST_WEATHER_UPDATE") {
-      this.weatherData = payload;
+  socketNotificationReceived: function (notification, payload) {
+    if (payload.instanceId !== this.identifier) return;
+
+    if (notification === "WEATHER_GRAPH_DATA") {
+      this.errorMessage = null;
+      this.weatherData = payload.data;
+      this.precipitationPeriods = payload.data.precipitationPeriods || [];
+      this.updateDom(this.config.updateFadeSpeed);
+    } else if (notification === "WEATHER_GRAPH_ERROR") {
+      this.errorMessage = payload.error;
       this.updateDom(this.config.updateFadeSpeed);
     }
   },
@@ -65,8 +95,20 @@ Module.register("MMM-WeatherForecastGraph", {
     wrapper.className = "weather-graph-wrapper";
     wrapper.style.width = this.config.width + "px";
 
+    // Show config error if lat/lon not set
+    if (!this.config.latitude || !this.config.longitude) {
+      wrapper.innerHTML = "<span class='dimmed'>Please configure latitude and longitude in config.js</span>";
+      return wrapper;
+    }
+
+    // Show API error if fetch failed
+    if (this.errorMessage) {
+      wrapper.innerHTML = "<span class='dimmed'>Weather API error: " + this.errorMessage + "</span>";
+      return wrapper;
+    }
+
     if (!this.weatherData || !this.weatherData.hourly) {
-      wrapper.innerHTML = "<span class='dimmed'>Waiting for weather data...</span>";
+      wrapper.innerHTML = "<span class='dimmed'>Loading weather data...</span>";
       return wrapper;
     }
 
@@ -225,16 +267,43 @@ Module.register("MMM-WeatherForecastGraph", {
     const canvas = document.getElementById(this.identifier + "-precip-chart");
     if (!canvas) return;
 
+    // Build annotations for precipitation amount periods
+    const annotations = {};
+    // Fixed height for all precipitation boxes - label shows the amount
+    const fixedHeight = 30;
+
+    this.precipitationPeriods.forEach((period, idx) => {
+      annotations["precip" + idx] = {
+        type: "box",
+        xMin: period.startIndex - 0.5,
+        xMax: period.endIndex - 0.5,
+        yMin: 0,
+        yMax: fixedHeight,
+        backgroundColor: this.config.precipitationAmountColor + "66",
+        borderColor: this.config.precipitationAmountColor,
+        borderWidth: 1,
+        label: {
+          display: period.amount_inches >= 0.05,
+          content: period.amount_inches.toFixed(2) + '"',
+          color: "#fff",
+          font: { size: 9, weight: "bold" },
+          position: "center"
+        }
+      };
+    });
+
     const baseOptions = this.getChartOptions("Precipitation");
+    const self = this;
+
     this.charts.precip = new Chart(canvas, {
       type: "bar",
       data: {
         labels: labels,
         datasets: [
           {
-            label: "Precipitation %",
+            label: "Chance %",
             data: hours.map((h) => (h.pop || 0) * 100),
-            backgroundColor: this.config.precipitationColor,
+            backgroundColor: this.config.precipitationColor + "99",
             borderWidth: 0,
             barPercentage: 0.8,
             categoryPercentage: 0.9
@@ -243,12 +312,47 @@ Module.register("MMM-WeatherForecastGraph", {
       },
       options: {
         ...baseOptions,
+        plugins: {
+          ...baseOptions.plugins,
+          legend: {
+            display: true,
+            position: "right",
+            labels: {
+              color: "#999",
+              font: { size: 10 },
+              boxWidth: 20,
+              padding: 5,
+              generateLabels: function (chart) {
+                const original = Chart.defaults.plugins.legend.labels.generateLabels(chart);
+                if (self.precipitationPeriods.length > 0) {
+                  original.push({
+                    text: "Amount",
+                    fillStyle: self.config.precipitationAmountColor + "66",
+                    strokeStyle: self.config.precipitationAmountColor,
+                    lineWidth: 1,
+                    hidden: false
+                  });
+                }
+                return original;
+              }
+            }
+          },
+          annotation: {
+            annotations: annotations
+          }
+        },
         scales: {
           ...baseOptions.scales,
           y: {
             ...baseOptions.scales.y,
             min: 0,
-            max: 100
+            max: 100,
+            title: {
+              display: true,
+              text: "Chance %",
+              color: "#999",
+              font: { size: 10 }
+            }
           }
         }
       }
@@ -264,7 +368,7 @@ Module.register("MMM-WeatherForecastGraph", {
         legend: {
           // Show legend for multi-dataset charts (Temperature with feels-like, Wind with gusts)
           display: (title === "Temperature" && this.config.showFeelsLike) || title === "Wind",
-          position: "top",
+          position: "right",
           labels: {
             color: "#999",
             font: { size: 10 },
@@ -299,7 +403,8 @@ Module.register("MMM-WeatherForecastGraph", {
           ticks: {
             color: "#999",
             font: { size: 10 }
-          }
+          },
+          grace: "5%"
         }
       }
     };
@@ -310,6 +415,11 @@ Module.register("MMM-WeatherForecastGraph", {
     const date = new Date(timestamp * 1000);
     if (isNaN(date.getTime())) return "--";
     const hour = date.getHours();
+    // Show weekday abbreviation at midnight as day marker
+    if (hour === 0) {
+      const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+      return days[date.getDay()];
+    }
     const ampm = hour >= 12 ? "p" : "a";
     const hour12 = hour % 12 || 12;
     return hour12 + ampm;
