@@ -473,6 +473,7 @@
         },
         scales: {
           x: {
+            offset: true,  // Add space between y-axis and first data point
             grid: {
               display: config.showGridLines,
               color: "#333"
@@ -694,6 +695,10 @@
           // Only show box if amount is above display threshold
           if (period.amount < period.displayThreshold) return;
 
+          // Skip boxes at chart start (index 0) with less than 2 hours visible
+          // Future 1-hour windows are fine, only skip partial windows at the leading edge
+          if (period.startIndex === 0 && period.endIndex - period.startIndex < 2) return;
+
           // Use different colors for rain vs snow
           const isSnow = period.type === "snow";
           const boxColor = isSnow ? config.snowAmountColor : config.precipitationAmountColor;
@@ -785,7 +790,6 @@
               ...baseOptions.scales,
               x: {
                 ...baseOptions.scales.x,
-                offset: false,  // Align grid lines with labels like line charts
                 grid: {
                   ...baseOptions.scales.x.grid,
                   offset: false
