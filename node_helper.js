@@ -141,18 +141,11 @@ module.exports = NodeHelper.create({
     const windGustValues = this.expandTimeSeries(properties.windGust?.values || []);
     const popValues = this.expandTimeSeries(properties.probabilityOfPrecipitation?.values || []);
 
-    // Extract raw precipitation periods (don't expand - keep original time spans)
-    const precipitationPeriods = this.extractPrecipitationPeriods(
-      properties.quantitativePrecipitation?.values || [],
-      now,
-      hoursToShow,
-      units
-    );
-
     // Find the starting hour (current hour)
     const startHour = new Date(now);
     startHour.setMinutes(0, 0, 0);
 
+    // Build hourly data first (we need temps for precipitation filtering)
     const hourly = [];
     for (let i = 0; i < hoursToShow; i++) {
       const targetTime = new Date(startHour.getTime() + i * 3600000);
@@ -173,6 +166,27 @@ module.exports = NodeHelper.create({
         pop: pop !== null ? pop / 100 : 0
       });
     }
+
+    // Extract rain and snow periods separately, then merge preferring snow
+    // (when it's snowing, users care about snow accumulation, not liquid equivalent)
+    const rainPeriods = this.extractPrecipitationPeriods(
+      properties.quantitativePrecipitation?.values || [],
+      now,
+      hoursToShow,
+      units,
+      "rain"
+    );
+
+    const snowPeriods = this.extractPrecipitationPeriods(
+      properties.snowfallAmount?.values || [],
+      now,
+      hoursToShow,
+      units,
+      "snow"
+    );
+
+    // Pass hourly data and units to filter out rain when it's freezing
+    const precipitationPeriods = this.mergePrecipitationPeriods(rainPeriods, snowPeriods, hourly, units);
 
     return {
       hourly: hourly,
@@ -226,7 +240,7 @@ module.exports = NodeHelper.create({
     return closest;
   },
 
-  extractPrecipitationPeriods: function (values, now, hoursToShow, units) {
+  extractPrecipitationPeriods: function (values, now, hoursToShow, units, type = "rain") {
     const periods = [];
     const startHour = new Date(now);
     startHour.setMinutes(0, 0, 0);
@@ -253,8 +267,11 @@ module.exports = NodeHelper.create({
 
       // Calculate display amount based on units
       const amount = units === "imperial" ? this.mmToInches(item.value) : item.value;
-      // Threshold for showing label: 0.05" or ~1.3mm (equivalent values)
-      const displayThreshold = units === "imperial" ? 0.05 : 1.3;
+      // Different thresholds for rain vs snow (snow amounts are larger)
+      // Rain: 0.01" or 0.25mm, Snow: 0.1" or 2.5mm
+      const displayThreshold = type === "snow"
+        ? (units === "imperial" ? 0.1 : 2.5)
+        : (units === "imperial" ? 0.01 : 0.25);
 
       periods.push({
         startIndex: startIndex,
@@ -262,11 +279,54 @@ module.exports = NodeHelper.create({
         amount_mm: item.value,
         amount: amount,
         displayThreshold: displayThreshold,
-        units: units
+        units: units,
+        type: type
       });
     }
 
     return periods;
+  },
+
+  // Merge rain and snow periods, preferring snow when they overlap
+  // (they represent the same precipitation event - snow amount vs liquid equivalent)
+  // Also hides rain when temp is at or below freezing (misleading to show rain at 28°F)
+  mergePrecipitationPeriods: function (rainPeriods, snowPeriods, hourly, units) {
+    // Create map of snow periods by startIndex for quick lookup
+    const snowByStart = new Map();
+    snowPeriods.forEach(p => snowByStart.set(p.startIndex, p));
+
+    const merged = [];
+    const usedSnowIndices = new Set();
+
+    // Freezing threshold: 32°F (imperial) or 0°C (metric)
+    const freezingPoint = units === "imperial" ? 32 : 0;
+
+    // For each rain period, if snow exists for same time, use snow instead
+    rainPeriods.forEach(rain => {
+      const snow = snowByStart.get(rain.startIndex);
+      if (snow && snow.amount > 0) {
+        merged.push(snow);  // Prefer snow (what users care about)
+        usedSnowIndices.add(rain.startIndex);
+      } else if (rain.amount > 0) {
+        // Check temperature at this hour - skip rain if it's freezing
+        const temp = hourly[rain.startIndex]?.temp;
+        const isFreezing = temp !== null && temp !== undefined && temp <= freezingPoint;
+
+        if (!isFreezing) {
+          merged.push(rain);  // Only show rain if above freezing
+        }
+        // Below freezing with no snow data: skip (don't show misleading rain)
+      }
+    });
+
+    // Add any snow periods not overlapping with rain
+    snowPeriods.forEach(snow => {
+      if (!usedSnowIndices.has(snow.startIndex) && snow.amount > 0) {
+        merged.push(snow);
+      }
+    });
+
+    return merged;
   },
 
   celsiusToFahrenheit: function (celsius) {
