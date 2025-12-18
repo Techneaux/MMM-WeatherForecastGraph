@@ -14,7 +14,7 @@ This module requires **MMM-OpenWeatherForecast** to be installed and configured.
 
 ```bash
 cd ~/MagicMirror/modules
-git clone https://github.com/YOUR_USERNAME/MMM-WeatherForecastGraph
+git clone https://github.com/Techneaux/MMM-WeatherForecastGraph
 cd MMM-WeatherForecastGraph
 npm install
 ```

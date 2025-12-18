@@ -154,8 +154,8 @@ Module.register("MMM-WeatherForecastGraph", {
   },
 
   renderTemperatureChart: function (hours, labels) {
-    const ctx = document.getElementById(this.identifier + "-temp-chart");
-    if (!ctx) return;
+    const canvas = document.getElementById(this.identifier + "-temp-chart");
+    if (!canvas) return;
 
     const datasets = [
       {
@@ -184,7 +184,7 @@ Module.register("MMM-WeatherForecastGraph", {
       });
     }
 
-    this.charts.temp = new Chart(ctx, {
+    this.charts.temp = new Chart(canvas, {
       type: "line",
       data: {
         labels: labels,
@@ -195,10 +195,10 @@ Module.register("MMM-WeatherForecastGraph", {
   },
 
   renderWindChart: function (hours, labels) {
-    const ctx = document.getElementById(this.identifier + "-wind-chart");
-    if (!ctx) return;
+    const canvas = document.getElementById(this.identifier + "-wind-chart");
+    if (!canvas) return;
 
-    this.charts.wind = new Chart(ctx, {
+    this.charts.wind = new Chart(canvas, {
       type: "bar",
       data: {
         labels: labels,
@@ -227,11 +227,11 @@ Module.register("MMM-WeatherForecastGraph", {
   },
 
   renderPrecipitationChart: function (hours, labels) {
-    const ctx = document.getElementById(this.identifier + "-precip-chart");
-    if (!ctx) return;
+    const canvas = document.getElementById(this.identifier + "-precip-chart");
+    if (!canvas) return;
 
     const baseOptions = this.getChartOptions("Precipitation");
-    this.charts.precip = new Chart(ctx, {
+    this.charts.precip = new Chart(canvas, {
       type: "bar",
       data: {
         labels: labels,
