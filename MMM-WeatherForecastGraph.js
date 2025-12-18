@@ -3,6 +3,9 @@
  * Fetches data directly from weather.gov API.
  */
 
+// Day name abbreviations used for midnight labels on x-axis
+const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
 Module.register("MMM-WeatherForecastGraph", {
   defaults: {
     latitude: null,
@@ -176,6 +179,7 @@ Module.register("MMM-WeatherForecastGraph", {
   legendFixedWidthPlugin: {
     id: "legendFixedWidth",
     beforeInit: function (chart) {
+      if (!chart.legend) return;
       const originalFit = chart.legend.fit;
       chart.legend.fit = function () {
         originalFit.call(this);
@@ -364,7 +368,7 @@ Module.register("MMM-WeatherForecastGraph", {
         borderColor: boxColor,
         borderWidth: 1,
         label: {
-          display: period.amount >= period.displayThreshold,
+          display: true,
           content: labelContent,
           color: "#fff",
           font: { size: 9, weight: "bold" },
@@ -519,9 +523,8 @@ Module.register("MMM-WeatherForecastGraph", {
             maxRotation: 0,
             callback: function (value, index) {
               const label = this.getLabelForValue(value);
-              // Check if this is a day name (Sat contains 'a', so can't use includes check)
-              const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-              const isDayLabel = dayNames.includes(label);
+              // Check if this is a day name using exact array match (not character detection)
+              const isDayLabel = DAY_NAMES.includes(label);
               // At midnight, show day name on second line (first line blank)
               if (isDayLabel) {
                 return ["", label];
@@ -559,8 +562,7 @@ Module.register("MMM-WeatherForecastGraph", {
     const hour = date.getHours();
     // Show weekday abbreviation at midnight as day marker
     if (hour === 0) {
-      const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-      return days[date.getDay()];
+      return DAY_NAMES[date.getDay()];
     }
     const ampm = hour >= 12 ? "p" : "a";
     const hour12 = hour % 12 || 12;
