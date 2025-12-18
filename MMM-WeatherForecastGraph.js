@@ -90,14 +90,8 @@ Module.register("MMM-WeatherForecastGraph", {
     // Render charts after DOM is updated using requestAnimationFrame
     if (!this.renderPending) {
       this.renderPending = true;
-      const dataSnapshot = this.weatherData;
       requestAnimationFrame(() => {
         this.renderPending = false;
-        // If data changed while waiting, trigger fresh update instead of rendering stale data
-        if (this.weatherData !== dataSnapshot) {
-          this.updateDom(this.config.updateFadeSpeed);
-          return;
-        }
         this.renderCharts();
       });
     }
