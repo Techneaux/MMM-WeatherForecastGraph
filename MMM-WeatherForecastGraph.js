@@ -24,6 +24,7 @@ Module.register("MMM-WeatherForecastGraph", {
 
   weatherData: null,
   charts: {},
+  // Flag to prevent duplicate chart renders during async DOM updates
   renderPending: false,
 
   getStyles: function () {
@@ -89,9 +90,15 @@ Module.register("MMM-WeatherForecastGraph", {
     // Render charts after DOM is updated using requestAnimationFrame
     if (!this.renderPending) {
       this.renderPending = true;
+      const dataSnapshot = this.weatherData;
       requestAnimationFrame(() => {
-        this.renderCharts();
         this.renderPending = false;
+        // If data changed while waiting, trigger fresh update instead of rendering stale data
+        if (this.weatherData !== dataSnapshot) {
+          this.updateDom(this.config.updateFadeSpeed);
+          return;
+        }
+        this.renderCharts();
       });
     }
 
@@ -155,7 +162,7 @@ Module.register("MMM-WeatherForecastGraph", {
         label: "Temperature",
         data: hours.map((h) => h.temp),
         borderColor: this.config.temperatureColor,
-        backgroundColor: this.config.temperatureColor + "33",
+        backgroundColor: this.config.temperatureColor + "33", // 33 hex = ~20% opacity
         tension: 0.3,
         fill: true,
         pointRadius: 0,
@@ -195,6 +202,7 @@ Module.register("MMM-WeatherForecastGraph", {
       type: "bar",
       data: {
         labels: labels,
+        // Gust bars wider (0.9) to appear behind narrower wind speed bars (0.7)
         datasets: [
           {
             label: "Wind Gust",
@@ -259,7 +267,8 @@ Module.register("MMM-WeatherForecastGraph", {
       animation: this.config.animateCharts ? {} : false,
       plugins: {
         legend: {
-          display: title === "Temperature" && this.config.showFeelsLike,
+          // Show legend for multi-dataset charts (Temperature with feels-like, Wind with gusts)
+          display: (title === "Temperature" && this.config.showFeelsLike) || title === "Wind",
           position: "top",
           labels: {
             color: "#999",
@@ -302,7 +311,7 @@ Module.register("MMM-WeatherForecastGraph", {
   },
 
   formatHour: function (timestamp) {
-    if (!timestamp || isNaN(timestamp)) return "--";
+    if (timestamp == null || isNaN(timestamp)) return "--";
     const date = new Date(timestamp * 1000);
     if (isNaN(date.getTime())) return "--";
     const hour = date.getHours();
