@@ -67,7 +67,7 @@
       width: 800px;
     }
     .chart-container {
-      background: rgba(0, 0, 0, 0.2);
+      background: rgba(0, 0, 0, 0.8);
       border-radius: 5px;
       padding: 5px;
     }
@@ -111,7 +111,7 @@
       temperatureColor: "#FFA500",
       feelsLikeColor: "#FF6347",
       windColor: "#4682B4",
-      gustColor: "#1E3A5F",
+      gustColor: "#6BA3D6",
       precipitationColor: "#00CED1",
       precipitationAmountColor: "#1E90FF",
       snowAmountColor: "#87CEEB"
@@ -459,7 +459,7 @@
             position: "right",
             labels: {
               color: "#999",
-              font: { size: 10 },
+              font: { size: 12 },
               boxWidth: 20,
               padding: 5
             }
@@ -468,7 +468,7 @@
             display: true,
             text: title,
             color: "#999",
-            font: { size: 12 }
+            font: { size: 14 }
           }
         },
         scales: {
@@ -479,7 +479,7 @@
             },
             ticks: {
               color: "#999",
-              font: { size: 10 },
+              font: { size: 12 },
               autoSkip: false,
               maxRotation: 0,
               callback: function(value, index) {
@@ -500,7 +500,7 @@
           },
           y: {
             afterFit: function(scaleInstance) {
-              scaleInstance.width = 40;  // Fixed width to align all charts
+              scaleInstance.width = 45;  // Fixed width to align all charts
             },
             grid: {
               display: config.showGridLines,
@@ -508,7 +508,7 @@
             },
             ticks: {
               color: "#999",
-              font: { size: 10 }
+              font: { size: 12 }
             },
             grace: '5%'
           }
@@ -524,7 +524,7 @@
         const originalFit = chart.legend.fit;
         chart.legend.fit = function () {
           originalFit.call(this);
-          this.width = 100; // Fixed width for all legends
+          this.width = 120; // Fixed width for all legends
         };
       }
     };
@@ -586,13 +586,16 @@
         const tempOptions = getChartOptions("Temperature");
         tempOptions.plugins.datalabels = {
           display: function(context) {
-            return context.dataIndex % 4 === 0;
+            // Show label every 4 hours, only for Temperature (not Feels Like)
+            return context.dataIndex % 4 === 0 && context.datasetIndex === 0;
           },
-          color: '#999',
+          color: '#ccc',
+          textStrokeColor: 'rgba(0,0,0,0.8)',
+          textStrokeWidth: 3,
           anchor: 'end',
           align: 'top',
           offset: 2,
-          font: { size: 9 },
+          font: { size: 11 },
           formatter: function(value) {
             return value !== null ? Math.round(value) + '°' : '';
           }
@@ -624,11 +627,13 @@
           display: function(context) {
             return context.dataIndex % 4 === 0 && context.datasetIndex === 0;
           },
-          color: '#999',
+          color: '#ccc',
+          textStrokeColor: 'rgba(0,0,0,0.8)',
+          textStrokeWidth: 3,
           anchor: 'end',
           align: 'top',
           offset: 2,
-          font: { size: 9 },
+          font: { size: 11 },
           formatter: function(value) {
             return value !== null ? Math.round(value) : '';
           }
@@ -705,8 +710,10 @@
             label: {
               display: true,
               content: period.amount.toFixed(2) + '"',
-              color: '#fff',
-              font: { size: 9, weight: 'bold' },
+              color: '#ccc',
+              textStrokeColor: 'rgba(0,0,0,0.8)',
+              textStrokeWidth: 3,
+              font: { size: 11, weight: 'normal' },
               position: 'center'
             }
           };
@@ -730,6 +737,7 @@
           },
           options: {
             ...baseOptions,
+            clip: false,  // Allow bars/annotations to render outside chart area
             plugins: {
               ...baseOptions.plugins,
               datalabels: { display: false },
@@ -738,7 +746,7 @@
                 position: "right",
                 labels: {
                   color: "#999",
-                  font: { size: 10 },
+                  font: { size: 12 },
                   boxWidth: 20,
                   padding: 5,
                   generateLabels: function(chart) {

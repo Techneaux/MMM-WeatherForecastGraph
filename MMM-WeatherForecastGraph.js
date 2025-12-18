@@ -25,7 +25,7 @@ Module.register("MMM-WeatherForecastGraph", {
     temperatureColor: "#FFA500",
     feelsLikeColor: "#FF6347",
     windColor: "#4682B4",
-    gustColor: "#1E3A5F",
+    gustColor: "#6BA3D6",
     precipitationColor: "#00CED1",
     precipitationAmountColor: "#1E90FF",
     snowAmountColor: "#87CEEB"  // Light sky blue for snow
@@ -183,7 +183,7 @@ Module.register("MMM-WeatherForecastGraph", {
       const originalFit = chart.legend.fit;
       chart.legend.fit = function () {
         originalFit.call(this);
-        this.width = 100; // Fixed width for all legends
+        this.width = 120; // Fixed width for all legends
       };
     }
   },
@@ -253,14 +253,16 @@ Module.register("MMM-WeatherForecastGraph", {
     const tempOptions = this.getChartOptions("Temperature");
     tempOptions.plugins.datalabels = {
       display: function(context) {
-        // Show label every 4 hours to align with x-axis ticks
-        return context.dataIndex % 4 === 0;
+        // Show label every 4 hours, only for Temperature (not Feels Like)
+        return context.dataIndex % 4 === 0 && context.datasetIndex === 0;
       },
-      color: '#999',
+      color: '#ccc',
+      textStrokeColor: 'rgba(0,0,0,0.8)',
+      textStrokeWidth: 3,
       anchor: 'end',
       align: 'top',
       offset: 2,
-      font: { size: 9 },
+      font: { size: 11 },
       formatter: function(value) {
         return value !== null ? Math.round(value) + '°' : '';
       }
@@ -291,11 +293,13 @@ Module.register("MMM-WeatherForecastGraph", {
         // Only show for first dataset (Wind Speed) to avoid clutter
         return context.dataIndex % 4 === 0 && context.datasetIndex === 0;
       },
-      color: '#999',
+      color: '#ccc',
+      textStrokeColor: 'rgba(0,0,0,0.8)',
+      textStrokeWidth: 3,
       anchor: 'end',
       align: 'top',
       offset: 2,
-      font: { size: 9 },
+      font: { size: 11 },
       formatter: function(value) {
         return value !== null ? Math.round(value) : '';
       }
@@ -370,8 +374,10 @@ Module.register("MMM-WeatherForecastGraph", {
         label: {
           display: true,
           content: labelContent,
-          color: "#fff",
-          font: { size: 9, weight: "bold" },
+          color: "#ccc",
+          textStrokeColor: "rgba(0,0,0,0.8)",
+          textStrokeWidth: 3,
+          font: { size: 11, weight: "normal" },
           position: "center"
         }
       };
@@ -397,6 +403,7 @@ Module.register("MMM-WeatherForecastGraph", {
       },
       options: {
         ...baseOptions,
+        clip: false,  // Allow bars/annotations to render outside chart area
         plugins: {
           ...baseOptions.plugins,
           datalabels: { display: false },
@@ -405,7 +412,7 @@ Module.register("MMM-WeatherForecastGraph", {
             position: "right",
             labels: {
               color: "#999",
-              font: { size: 10 },
+              font: { size: 12 },
               boxWidth: 20,
               padding: 5,
               generateLabels: function (chart) {
@@ -498,7 +505,7 @@ Module.register("MMM-WeatherForecastGraph", {
           position: "right",
           labels: {
             color: "#999",
-            font: { size: 10 },
+            font: { size: 12 },
             boxWidth: 20,
             padding: 5
           }
@@ -507,7 +514,7 @@ Module.register("MMM-WeatherForecastGraph", {
           display: true,
           text: title,
           color: "#999",
-          font: { size: 12 }
+          font: { size: 14 }
         }
       },
       scales: {
@@ -518,7 +525,7 @@ Module.register("MMM-WeatherForecastGraph", {
           },
           ticks: {
             color: "#999",
-            font: { size: 10 },
+            font: { size: 12 },
             autoSkip: false,
             maxRotation: 0,
             callback: function (value, index) {
@@ -539,7 +546,7 @@ Module.register("MMM-WeatherForecastGraph", {
         },
         y: {
           afterFit: function (scaleInstance) {
-            scaleInstance.width = 40;  // Fixed width to align all charts
+            scaleInstance.width = 45;  // Fixed width to align all charts
           },
           grid: {
             display: this.config.showGridLines,
@@ -547,7 +554,7 @@ Module.register("MMM-WeatherForecastGraph", {
           },
           ticks: {
             color: "#999",
-            font: { size: 10 }
+            font: { size: 12 }
           },
           grace: "5%"
         }
