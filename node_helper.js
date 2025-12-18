@@ -40,7 +40,8 @@ module.exports = NodeHelper.create({
     const config = this.instances[instanceId];
     if (!config) return;
 
-    setInterval(() => {
+    // Store interval ID for potential cleanup to avoid multiple concurrent intervals
+    config.updateIntervalId = setInterval(() => {
       this.fetchData(instanceId);
     }, config.updateInterval);
   },
@@ -192,6 +193,8 @@ module.exports = NodeHelper.create({
     return expanded;
   },
 
+  // Parse ISO 8601 duration - only supports hours format (e.g., "PT1H", "PT6H")
+  // Other duration formats will default to 1 hour
   parseDuration: function (duration) {
     const match = duration.match(/PT(\d+)H/);
     return match ? parseInt(match[1], 10) : 1;
@@ -239,11 +242,18 @@ module.exports = NodeHelper.create({
       const startIndex = Math.floor((displayStart.getTime() - startHour.getTime()) / 3600000);
       const endIndex = Math.floor((displayEnd.getTime() - startHour.getTime()) / 3600000);
 
+      // Calculate display amount based on units
+      const amount = units === "imperial" ? this.mmToInches(item.value) : item.value;
+      // Threshold for showing label: 0.05" or ~1.3mm (equivalent values)
+      const displayThreshold = units === "imperial" ? 0.05 : 1.3;
+
       periods.push({
         startIndex: startIndex,
         endIndex: endIndex,
         amount_mm: item.value,
-        amount_inches: units === "imperial" ? this.mmToInches(item.value) : item.value
+        amount: amount,
+        displayThreshold: displayThreshold,
+        units: units
       });
     }
 

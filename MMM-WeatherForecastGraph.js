@@ -269,22 +269,26 @@ Module.register("MMM-WeatherForecastGraph", {
 
     // Build annotations for precipitation amount periods
     const annotations = {};
-    // Fixed height for all precipitation boxes - label shows the amount
+    // Fixed height of 30 (30% of y-axis 0-100 scale) - label shows the amount value
     const fixedHeight = 30;
 
     this.precipitationPeriods.forEach((period, idx) => {
+      // Format label based on units: inches (") or mm
+      const unitSymbol = period.units === "imperial" ? '"' : "mm";
+      const labelContent = period.amount.toFixed(2) + unitSymbol;
+
       annotations["precip" + idx] = {
         type: "box",
         xMin: period.startIndex - 0.5,
         xMax: period.endIndex - 0.5,
         yMin: 0,
         yMax: fixedHeight,
-        backgroundColor: this.config.precipitationAmountColor + "66",
+        backgroundColor: this.config.precipitationAmountColor + "66", // 66 hex = 40% opacity
         borderColor: this.config.precipitationAmountColor,
         borderWidth: 1,
         label: {
-          display: period.amount_inches >= 0.05,
-          content: period.amount_inches.toFixed(2) + '"',
+          display: period.amount >= period.displayThreshold,
+          content: labelContent,
           color: "#fff",
           font: { size: 9, weight: "bold" },
           position: "center"
@@ -303,7 +307,7 @@ Module.register("MMM-WeatherForecastGraph", {
           {
             label: "Chance %",
             data: hours.map((h) => (h.pop || 0) * 100),
-            backgroundColor: this.config.precipitationColor + "99",
+            backgroundColor: this.config.precipitationColor + "99", // 99 hex = 60% opacity
             borderWidth: 0,
             barPercentage: 0.8,
             categoryPercentage: 0.9

@@ -132,6 +132,15 @@
         return;
       }
 
+      // Validate coordinate values
+      const latNum = Number(lat);
+      const lonNum = Number(lon);
+      if (!Number.isFinite(latNum) || !Number.isFinite(lonNum) ||
+          latNum < -90 || latNum > 90 || lonNum < -180 || lonNum > 180) {
+        setStatus('Invalid coordinates. Latitude: -90 to 90, Longitude: -180 to 180', 'error');
+        return;
+      }
+
       setStatus('Fetching location data...');
 
       try {
@@ -201,7 +210,6 @@
 
       for (let i = 0; i < config.hoursToShow; i++) {
         const targetTime = new Date(startHour.getTime() + i * 3600000);
-        const isoTime = targetTime.toISOString();
 
         // Find values for this hour
         const temp = findValueAtTime(tempValues, targetTime);
@@ -246,8 +254,9 @@
       return expanded;
     }
 
+    // Parse ISO 8601 duration - only supports hours format (e.g., "PT1H", "PT6H")
+    // Other duration formats will default to 1 hour
     function parseDuration(duration) {
-      // Parse ISO 8601 duration like "PT1H", "PT3H", "PT6H"
       const match = duration.match(/PT(\d+)H/);
       return match ? parseInt(match[1], 10) : 1;
     }
