@@ -1,0 +1,17 @@
+{
+  "name": "mmm-weatherforecastgraph",
+  "version": "1.0.0",
+  "description": "MagicMirror² module for displaying 48-hour weather forecast graphs",
+  "main": "MMM-WeatherForecastGraph.js",
+  "keywords": [
+    "MagicMirror",
+    "weather",
+    "chart",
+    "graph",
+    "forecast"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "chart.js": "^4.4.0"
+  }
+}

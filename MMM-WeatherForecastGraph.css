@@ -1,0 +1,18 @@
+.weather-graph-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.weather-graph-wrapper .chart-container {
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 5px;
+  padding: 5px;
+}
+
+.weather-graph-wrapper .dimmed {
+  color: #666;
+  font-size: 14px;
+  text-align: center;
+  padding: 20px;
+}
