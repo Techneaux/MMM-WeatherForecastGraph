@@ -354,6 +354,10 @@ Module.register("MMM-WeatherForecastGraph", {
       // Only show box if amount is above display threshold
       if (period.amount < period.displayThreshold) return;
 
+      // Skip boxes at chart start (index 0) with less than 2 hours visible
+      // Future 1-hour windows are fine, only skip partial windows at the leading edge
+      if (period.startIndex === 0 && period.endIndex - period.startIndex < 2) return;
+
       // Format label based on units: inches (") or mm
       const unitSymbol = period.units === "imperial" ? '"' : "mm";
       const labelContent = period.amount.toFixed(2) + unitSymbol;
@@ -451,7 +455,6 @@ Module.register("MMM-WeatherForecastGraph", {
           ...baseOptions.scales,
           x: {
             ...baseOptions.scales.x,
-            offset: false,  // Align grid lines with labels like line charts
             grid: {
               ...baseOptions.scales.x.grid,
               offset: false
@@ -519,6 +522,7 @@ Module.register("MMM-WeatherForecastGraph", {
       },
       scales: {
         x: {
+          offset: true,  // Add space between y-axis and first data point
           grid: {
             display: this.config.showGridLines,
             color: "#333"
