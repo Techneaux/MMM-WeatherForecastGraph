@@ -173,6 +173,11 @@ Module.register("MMM-WeatherForecastGraph", {
   renderCharts: function () {
     if (!this.weatherData || !this.weatherData.hourly) return;
 
+    // Ensure annotation plugin is registered (may not auto-register in MagicMirror context)
+    if (window.ChartAnnotation && !Chart.registry.plugins.get("annotation")) {
+      Chart.register(window.ChartAnnotation);
+    }
+
     // Destroy existing charts first to prevent memory leaks
     this.destroyAllCharts();
 
