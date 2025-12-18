@@ -100,8 +100,7 @@ module.exports = NodeHelper.create({
       // Step 3: Process the data
       const processedData = this.processWeatherData(gridData.properties, config);
 
-      // Step 4: Cache the data for fresh page loads
-      const cacheKey = `${latitude},${longitude}`;
+      // Step 4: Cache the data for fresh page loads (reuse cacheKey from Step 1)
       this.dataCache[cacheKey] = processedData;
 
       // Step 5: Send to frontend with instanceId for filtering
