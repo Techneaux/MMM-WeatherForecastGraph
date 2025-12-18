@@ -6,7 +6,7 @@
 }
 
 .weather-graph-wrapper .chart-container {
-  background: rgba(0, 0, 0, 0.2);
+  background: rgba(0, 0, 0, 0.8);
   border-radius: 5px;
   padding: 5px;
 }
