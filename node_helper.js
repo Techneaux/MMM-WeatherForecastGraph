@@ -10,6 +10,8 @@ module.exports = NodeHelper.create({
   instances: {},
   // Cache grid URLs by coordinates (they never change)
   gridUrlCache: {},
+  // Cache weather data by coordinates (for fresh page loads)
+  dataCache: {},
   // Retry settings
   maxRetries: 3,
   retryDelayMs: 5000,
@@ -21,18 +23,22 @@ module.exports = NodeHelper.create({
   socketNotificationReceived: function (notification, payload) {
     if (notification === "CONFIG") {
       const instanceId = payload.instanceId;
+      const cacheKey = `${payload.latitude},${payload.longitude}`;
 
-      // Check if this instance is already registered
-      if (this.instances[instanceId]) {
-        return; // Already running, skip
+      // Always send cached data immediately if available (for fresh page loads)
+      if (this.dataCache[cacheKey]) {
+        this.sendSocketNotification("WEATHER_GRAPH_DATA", {
+          instanceId: instanceId,
+          data: this.dataCache[cacheKey]
+        });
       }
 
-      // Register this instance
-      this.instances[instanceId] = payload;
-
-      // Start fetching for this instance
-      this.fetchData(instanceId);
-      this.scheduleUpdate(instanceId);
+      // Only start fetching/intervals if not already running for this instance
+      if (!this.instances[instanceId]) {
+        this.instances[instanceId] = payload;
+        this.fetchData(instanceId);
+        this.scheduleUpdate(instanceId);
+      }
     }
   },
 
@@ -94,7 +100,11 @@ module.exports = NodeHelper.create({
       // Step 3: Process the data
       const processedData = this.processWeatherData(gridData.properties, config);
 
-      // Step 4: Send to frontend with instanceId for filtering
+      // Step 4: Cache the data for fresh page loads
+      const cacheKey = `${latitude},${longitude}`;
+      this.dataCache[cacheKey] = processedData;
+
+      // Step 5: Send to frontend with instanceId for filtering
       this.sendSocketNotification("WEATHER_GRAPH_DATA", {
         instanceId: instanceId,
         data: processedData
