@@ -6,6 +6,7 @@
   <title>MMM-WeatherForecastGraph Test</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.0.1/dist/chartjs-plugin-annotation.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js"></script>
   <style>
     * {
       box-sizing: border-box;
@@ -93,6 +94,9 @@
   </div>
 
   <script>
+    // Day name abbreviations used for midnight labels on x-axis
+    const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
     // Configuration (matching module defaults)
     const config = {
       width: 800,
@@ -109,7 +113,8 @@
       windColor: "#4682B4",
       gustColor: "#1E3A5F",
       precipitationColor: "#00CED1",
-      precipitationAmountColor: "#1E90FF"
+      precipitationAmountColor: "#1E90FF",
+      snowAmountColor: "#87CEEB"
     };
 
     // Store raw precipitation periods for spanning bars
@@ -198,16 +203,11 @@
       const windGustValues = expandTimeSeries(properties.windGust?.values || []);
       const popValues = expandTimeSeries(properties.probabilityOfPrecipitation?.values || []);
 
-      // Extract raw precipitation periods (don't expand - keep original time spans)
-      precipitationPeriods = extractPrecipitationPeriods(
-        properties.quantitativePrecipitation?.values || [],
-        now
-      );
-
       // Find the starting hour (current hour)
       const startHour = new Date(now);
       startHour.setMinutes(0, 0, 0);
 
+      // Build hourly data first (we need temps for precipitation filtering)
       for (let i = 0; i < config.hoursToShow; i++) {
         const targetTime = new Date(startHour.getTime() + i * 3600000);
 
@@ -227,6 +227,20 @@
           pop: pop !== null ? pop / 100 : 0  // Convert to 0-1 range
         });
       }
+
+      // Extract rain and snow periods separately, then merge preferring snow
+      // Pass hourly data to filter out rain when it's freezing
+      const rainPeriods = extractPrecipitationPeriods(
+        properties.quantitativePrecipitation?.values || [],
+        now,
+        "rain"
+      );
+      const snowPeriods = extractPrecipitationPeriods(
+        properties.snowfallAmount?.values || [],
+        now,
+        "snow"
+      );
+      precipitationPeriods = mergePrecipitationPeriods(rainPeriods, snowPeriods, hourlyData);
 
       return hourlyData;
     }
@@ -294,7 +308,7 @@
       return Math.round(mm * 0.0393701 * 100) / 100;  // 2 decimal places
     }
 
-    function extractPrecipitationPeriods(values, now) {
+    function extractPrecipitationPeriods(values, now, type = "rain") {
       // Extract precipitation periods that fall within our display window
       const periods = [];
       const startHour = new Date(now);
@@ -320,17 +334,61 @@
         const startIndex = Math.floor((displayStart.getTime() - startHour.getTime()) / 3600000);
         const endIndex = Math.floor((displayEnd.getTime() - startHour.getTime()) / 3600000);
 
+        const amount = mmToInches(item.value);
+        // Different thresholds for rain vs snow
+        const displayThreshold = type === "snow" ? 0.1 : 0.01;
+
         periods.push({
           startIndex,
           endIndex,
           startTime: displayStart,
           endTime: displayEnd,
           amount_mm: item.value,
-          amount_inches: mmToInches(item.value)
+          amount: amount,
+          displayThreshold: displayThreshold,
+          type: type
         });
       }
 
       return periods;
+    }
+
+    // Merge rain and snow periods, preferring snow when they overlap
+    // Also hides rain when temp is at or below freezing (misleading to show rain at 28°F)
+    function mergePrecipitationPeriods(rainPeriods, snowPeriods, hourlyData) {
+      const snowByStart = new Map();
+      snowPeriods.forEach(p => snowByStart.set(p.startIndex, p));
+
+      const merged = [];
+      const usedSnowIndices = new Set();
+
+      // Freezing threshold: 32°F (test.html always uses imperial)
+      const freezingPoint = 32;
+
+      rainPeriods.forEach(rain => {
+        const snow = snowByStart.get(rain.startIndex);
+        if (snow && snow.amount > 0) {
+          merged.push(snow);  // Prefer snow (what users care about)
+          usedSnowIndices.add(rain.startIndex);
+        } else if (rain.amount > 0) {
+          // Check temperature at this hour - skip rain if it's freezing
+          const temp = hourlyData[rain.startIndex]?.temp;
+          const isFreezing = temp !== null && temp !== undefined && temp <= freezingPoint;
+
+          if (!isFreezing) {
+            merged.push(rain);  // Only show rain if above freezing
+          }
+          // Below freezing with no snow data: skip (don't show misleading rain)
+        }
+      });
+
+      snowPeriods.forEach(snow => {
+        if (!usedSnowIndices.has(snow.startIndex) && snow.amount > 0) {
+          merged.push(snow);
+        }
+      });
+
+      return merged;
     }
 
     function calculateChartHeight() {
@@ -357,12 +415,37 @@
       const hour = date.getHours();
       // Show weekday abbreviation at midnight as day marker
       if (hour === 0) {
-        const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-        return days[date.getDay()];
+        return DAY_NAMES[date.getDay()];
       }
       const ampm = hour >= 12 ? "p" : "a";
       const hour12 = hour % 12 || 12;
       return hour12 + ampm;
+    }
+
+    function getMidnightIndices(hourlyData) {
+      const indices = [];
+      hourlyData.forEach((h, idx) => {
+        const date = new Date(h.dt * 1000);
+        if (date.getHours() === 0) {
+          indices.push(idx);
+        }
+      });
+      return indices;
+    }
+
+    function getMidnightAnnotations(hourlyData) {
+      const annotations = {};
+      getMidnightIndices(hourlyData).forEach((idx, i) => {
+        annotations["midnight" + i] = {
+          type: "line",
+          xMin: idx,
+          xMax: idx,
+          borderColor: "#555",
+          borderWidth: 1,
+          borderDash: [4, 4]
+        };
+      });
+      return annotations;
     }
 
     function getChartOptions(title) {
@@ -396,11 +479,29 @@
             },
             ticks: {
               color: "#999",
-              maxTicksLimit: 12,
-              font: { size: 10 }
+              font: { size: 10 },
+              autoSkip: false,
+              maxRotation: 0,
+              callback: function(value, index) {
+                const label = this.getLabelForValue(value);
+                // Check if this is a day name using exact array match (not character detection)
+                const isDayLabel = DAY_NAMES.includes(label);
+                // At midnight, show day name on second line (first line blank)
+                if (isDayLabel) {
+                  return ["", label];
+                }
+                // Show regular hours every 4 hours
+                if (index % 4 === 0) {
+                  return label;
+                }
+                return null;
+              }
             }
           },
           y: {
+            afterFit: function(scaleInstance) {
+              scaleInstance.width = 40;  // Fixed width to align all charts
+            },
             grid: {
               display: config.showGridLines,
               color: "#333"
@@ -415,7 +516,28 @@
       };
     }
 
+    // Plugin to force fixed legend width for chart alignment
+    const legendFixedWidthPlugin = {
+      id: "legendFixedWidth",
+      beforeInit: function (chart) {
+        if (!chart.legend) return;
+        const originalFit = chart.legend.fit;
+        chart.legend.fit = function () {
+          originalFit.call(this);
+          this.width = 100; // Fixed width for all legends
+        };
+      }
+    };
+
     function renderCharts(hourlyData) {
+      // Register plugins if not already registered
+      if (typeof ChartDataLabels !== 'undefined' && !Chart.registry.plugins.get('datalabels')) {
+        Chart.register(ChartDataLabels);
+      }
+      if (!Chart.registry.plugins.get('legendFixedWidth')) {
+        Chart.register(legendFixedWidthPlugin);
+      }
+
       destroyAllCharts();
 
       const wrapper = document.getElementById('chartWrapper');
@@ -439,9 +561,9 @@
             label: "Temperature",
             data: hourlyData.map(h => h.temp),
             borderColor: config.temperatureColor,
-            backgroundColor: config.temperatureColor + "33",
+            backgroundColor: "transparent",
             tension: 0.3,
-            fill: true,
+            fill: false,
             pointRadius: 0,
             borderWidth: 2
           }
@@ -461,10 +583,29 @@
           });
         }
 
+        const tempOptions = getChartOptions("Temperature");
+        tempOptions.plugins.datalabels = {
+          display: function(context) {
+            return context.dataIndex % 4 === 0;
+          },
+          color: '#999',
+          anchor: 'end',
+          align: 'top',
+          offset: 2,
+          font: { size: 9 },
+          formatter: function(value) {
+            return value !== null ? Math.round(value) + '°' : '';
+          }
+        };
+        // Add midnight vertical line annotations
+        tempOptions.plugins.annotation = {
+          annotations: getMidnightAnnotations(hourlyData)
+        };
+
         charts.temp = new Chart(canvas, {
           type: "line",
           data: { labels, datasets },
-          options: getChartOptions("Temperature")
+          options: tempOptions
         });
       }
 
@@ -478,30 +619,54 @@
         container.appendChild(canvas);
         wrapper.appendChild(container);
 
+        const windOptions = getChartOptions("Wind");
+        windOptions.plugins.datalabels = {
+          display: function(context) {
+            return context.dataIndex % 4 === 0 && context.datasetIndex === 0;
+          },
+          color: '#999',
+          anchor: 'end',
+          align: 'top',
+          offset: 2,
+          font: { size: 9 },
+          formatter: function(value) {
+            return value !== null ? Math.round(value) : '';
+          }
+        };
+        // Add midnight vertical line annotations
+        windOptions.plugins.annotation = {
+          annotations: getMidnightAnnotations(hourlyData)
+        };
+
         charts.wind = new Chart(canvas, {
-          type: "bar",
+          type: "line",
           data: {
             labels,
             datasets: [
               {
-                label: "Wind Gust",
-                data: hourlyData.map(h => h.wind_gust || null),
-                backgroundColor: config.gustColor,
-                borderWidth: 0,
-                barPercentage: 0.9,
-                categoryPercentage: 0.9
-              },
-              {
                 label: "Wind Speed",
                 data: hourlyData.map(h => h.wind_speed),
-                backgroundColor: config.windColor,
-                borderWidth: 0,
-                barPercentage: 0.7,
-                categoryPercentage: 0.9
+                borderColor: config.windColor,
+                backgroundColor: "transparent",
+                tension: 0.3,
+                fill: false,
+                pointRadius: 0,
+                borderWidth: 2
+              },
+              {
+                label: "Wind Gust",
+                data: hourlyData.map(h => h.wind_gust || null),
+                borderColor: config.gustColor,
+                backgroundColor: "transparent",
+                tension: 0.3,
+                fill: false,
+                pointRadius: 0,
+                borderWidth: 2,
+                borderDash: [5, 5]
               }
             ]
           },
-          options: getChartOptions("Wind")
+          options: windOptions
         });
       }
 
@@ -515,24 +680,31 @@
         container.appendChild(canvas);
         wrapper.appendChild(container);
 
-        // Build annotations for precipitation amount periods
-        const annotations = {};
+        // Build annotations: midnight lines + precipitation amount boxes
+        const annotations = getMidnightAnnotations(hourlyData);
         // Fixed height for all precipitation boxes - label shows the amount
         const fixedHeight = 30;
 
         precipitationPeriods.forEach((period, idx) => {
+          // Only show box if amount is above display threshold
+          if (period.amount < period.displayThreshold) return;
+
+          // Use different colors for rain vs snow
+          const isSnow = period.type === "snow";
+          const boxColor = isSnow ? config.snowAmountColor : config.precipitationAmountColor;
+
           annotations[`precip${idx}`] = {
             type: 'box',
             xMin: period.startIndex - 0.5,
             xMax: period.endIndex - 0.5,
             yMin: 0,
             yMax: fixedHeight,
-            backgroundColor: config.precipitationAmountColor + '66',  // 40% opacity
-            borderColor: config.precipitationAmountColor,
+            backgroundColor: boxColor + '66',  // 40% opacity
+            borderColor: boxColor,
             borderWidth: 1,
             label: {
-              display: period.amount_inches >= 0.05,
-              content: period.amount_inches.toFixed(2) + '"',
+              display: true,
+              content: period.amount.toFixed(2) + '"',
               color: '#fff',
               font: { size: 9, weight: 'bold' },
               position: 'center'
@@ -560,6 +732,7 @@
             ...baseOptions,
             plugins: {
               ...baseOptions.plugins,
+              datalabels: { display: false },
               legend: {
                 display: true,
                 position: "right",
@@ -570,12 +743,24 @@
                   padding: 5,
                   generateLabels: function(chart) {
                     const original = Chart.defaults.plugins.legend.labels.generateLabels(chart);
-                    // Add custom legend entry for precipitation amount
-                    if (precipitationPeriods.length > 0) {
+                    // Add custom legend entries for rain and snow amounts
+                    const hasRain = precipitationPeriods.some(p => p.type === "rain");
+                    const hasSnow = precipitationPeriods.some(p => p.type === "snow");
+
+                    if (hasRain) {
                       original.push({
-                        text: 'Amount',
+                        text: 'Rain',
                         fillStyle: config.precipitationAmountColor + '66',
                         strokeStyle: config.precipitationAmountColor,
+                        lineWidth: 1,
+                        hidden: false
+                      });
+                    }
+                    if (hasSnow) {
+                      original.push({
+                        text: 'Snow',
+                        fillStyle: config.snowAmountColor + '66',
+                        strokeStyle: config.snowAmountColor,
                         lineWidth: 1,
                         hidden: false
                       });
@@ -590,16 +775,18 @@
             },
             scales: {
               ...baseOptions.scales,
+              x: {
+                ...baseOptions.scales.x,
+                offset: false,  // Align grid lines with labels like line charts
+                grid: {
+                  ...baseOptions.scales.x.grid,
+                  offset: false
+                }
+              },
               y: {
                 ...baseOptions.scales.y,
                 min: 0,
-                max: 100,
-                title: {
-                  display: true,
-                  text: 'Chance %',
-                  color: '#999',
-                  font: { size: 10 }
-                }
+                max: 100
               }
             }
           }

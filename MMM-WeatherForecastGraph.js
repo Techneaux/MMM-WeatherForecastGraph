@@ -3,6 +3,9 @@
  * Fetches data directly from weather.gov API.
  */
 
+// Day name abbreviations used for midnight labels on x-axis
+const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
 Module.register("MMM-WeatherForecastGraph", {
   defaults: {
     latitude: null,
@@ -24,7 +27,8 @@ Module.register("MMM-WeatherForecastGraph", {
     windColor: "#4682B4",
     gustColor: "#1E3A5F",
     precipitationColor: "#00CED1",
-    precipitationAmountColor: "#1E90FF"
+    precipitationAmountColor: "#1E90FF",
+    snowAmountColor: "#87CEEB"  // Light sky blue for snow
   },
 
   weatherData: null,
@@ -42,7 +46,8 @@ Module.register("MMM-WeatherForecastGraph", {
   getScripts: function () {
     return [
       this.file("node_modules/chart.js/dist/chart.umd.js"),
-      this.file("node_modules/chartjs-plugin-annotation/dist/chartjs-plugin-annotation.min.js")
+      this.file("node_modules/chartjs-plugin-annotation/dist/chartjs-plugin-annotation.min.js"),
+      this.file("node_modules/chartjs-plugin-datalabels/dist/chartjs-plugin-datalabels.min.js")
     ];
   },
 
@@ -170,12 +175,31 @@ Module.register("MMM-WeatherForecastGraph", {
     });
   },
 
+  // Plugin to force fixed legend width for chart alignment
+  legendFixedWidthPlugin: {
+    id: "legendFixedWidth",
+    beforeInit: function (chart) {
+      if (!chart.legend) return;
+      const originalFit = chart.legend.fit;
+      chart.legend.fit = function () {
+        originalFit.call(this);
+        this.width = 100; // Fixed width for all legends
+      };
+    }
+  },
+
   renderCharts: function () {
     if (!this.weatherData || !this.weatherData.hourly) return;
 
-    // Ensure annotation plugin is registered (may not auto-register in MagicMirror context)
+    // Ensure plugins are registered (may not auto-register in MagicMirror context)
     if (window.ChartAnnotation && !Chart.registry.plugins.get("annotation")) {
       Chart.register(window.ChartAnnotation);
+    }
+    if (window.ChartDataLabels && !Chart.registry.plugins.get("datalabels")) {
+      Chart.register(window.ChartDataLabels);
+    }
+    if (!Chart.registry.plugins.get("legendFixedWidth")) {
+      Chart.register(this.legendFixedWidthPlugin);
     }
 
     // Destroy existing charts first to prevent memory leaks
@@ -204,9 +228,9 @@ Module.register("MMM-WeatherForecastGraph", {
         label: "Temperature",
         data: hours.map((h) => h.temp),
         borderColor: this.config.temperatureColor,
-        backgroundColor: this.config.temperatureColor + "33", // 33 hex = ~20% opacity
+        backgroundColor: "transparent",
         tension: 0.3,
-        fill: true,
+        fill: false,
         pointRadius: 0,
         borderWidth: 2
       }
@@ -226,13 +250,33 @@ Module.register("MMM-WeatherForecastGraph", {
       });
     }
 
+    const tempOptions = this.getChartOptions("Temperature");
+    tempOptions.plugins.datalabels = {
+      display: function(context) {
+        // Show label every 4 hours to align with x-axis ticks
+        return context.dataIndex % 4 === 0;
+      },
+      color: '#999',
+      anchor: 'end',
+      align: 'top',
+      offset: 2,
+      font: { size: 9 },
+      formatter: function(value) {
+        return value !== null ? Math.round(value) + '°' : '';
+      }
+    };
+    // Add midnight vertical line annotations
+    tempOptions.plugins.annotation = {
+      annotations: this.getMidnightAnnotations(hours)
+    };
+
     this.charts.temp = new Chart(canvas, {
       type: "line",
       data: {
         labels: labels,
         datasets: datasets
       },
-      options: this.getChartOptions("Temperature")
+      options: tempOptions
     });
   },
 
@@ -240,31 +284,56 @@ Module.register("MMM-WeatherForecastGraph", {
     const canvas = document.getElementById(this.identifier + "-wind-chart");
     if (!canvas) return;
 
+    const windOptions = this.getChartOptions("Wind");
+    windOptions.plugins.datalabels = {
+      display: function(context) {
+        // Show label every 4 hours to align with x-axis ticks
+        // Only show for first dataset (Wind Speed) to avoid clutter
+        return context.dataIndex % 4 === 0 && context.datasetIndex === 0;
+      },
+      color: '#999',
+      anchor: 'end',
+      align: 'top',
+      offset: 2,
+      font: { size: 9 },
+      formatter: function(value) {
+        return value !== null ? Math.round(value) : '';
+      }
+    };
+    // Add midnight vertical line annotations
+    windOptions.plugins.annotation = {
+      annotations: this.getMidnightAnnotations(hours)
+    };
+
     this.charts.wind = new Chart(canvas, {
-      type: "bar",
+      type: "line",
       data: {
         labels: labels,
-        // Gust bars wider (0.9) to appear behind narrower wind speed bars (0.7)
         datasets: [
-          {
-            label: "Wind Gust",
-            data: hours.map((h) => h.wind_gust || null),
-            backgroundColor: this.config.gustColor,
-            borderWidth: 0,
-            barPercentage: 0.9,
-            categoryPercentage: 0.9
-          },
           {
             label: "Wind Speed",
             data: hours.map((h) => h.wind_speed),
-            backgroundColor: this.config.windColor,
-            borderWidth: 0,
-            barPercentage: 0.7,
-            categoryPercentage: 0.9
+            borderColor: this.config.windColor,
+            backgroundColor: "transparent",
+            tension: 0.3,
+            fill: false,
+            pointRadius: 0,
+            borderWidth: 2
+          },
+          {
+            label: "Wind Gust",
+            data: hours.map((h) => h.wind_gust || null),
+            borderColor: this.config.gustColor,
+            backgroundColor: "transparent",
+            tension: 0.3,
+            fill: false,
+            pointRadius: 0,
+            borderWidth: 2,
+            borderDash: [5, 5]
           }
         ]
       },
-      options: this.getChartOptions("Wind")
+      options: windOptions
     });
   },
 
@@ -272,15 +341,22 @@ Module.register("MMM-WeatherForecastGraph", {
     const canvas = document.getElementById(this.identifier + "-precip-chart");
     if (!canvas) return;
 
-    // Build annotations for precipitation amount periods
-    const annotations = {};
+    // Build annotations: midnight lines + precipitation amount boxes
+    const annotations = this.getMidnightAnnotations(hours);
     // Fixed height of 30 (30% of y-axis 0-100 scale) - label shows the amount value
     const fixedHeight = 30;
 
     this.precipitationPeriods.forEach((period, idx) => {
+      // Only show box if amount is above display threshold
+      if (period.amount < period.displayThreshold) return;
+
       // Format label based on units: inches (") or mm
       const unitSymbol = period.units === "imperial" ? '"' : "mm";
       const labelContent = period.amount.toFixed(2) + unitSymbol;
+
+      // Use different colors for rain vs snow
+      const isSnow = period.type === "snow";
+      const boxColor = isSnow ? this.config.snowAmountColor : this.config.precipitationAmountColor;
 
       annotations["precip" + idx] = {
         type: "box",
@@ -288,11 +364,11 @@ Module.register("MMM-WeatherForecastGraph", {
         xMax: period.endIndex - 0.5,
         yMin: 0,
         yMax: fixedHeight,
-        backgroundColor: this.config.precipitationAmountColor + "66", // 66 hex = 40% opacity
-        borderColor: this.config.precipitationAmountColor,
+        backgroundColor: boxColor + "66", // 66 hex = 40% opacity
+        borderColor: boxColor,
         borderWidth: 1,
         label: {
-          display: period.amount >= period.displayThreshold,
+          display: true,
           content: labelContent,
           color: "#fff",
           font: { size: 9, weight: "bold" },
@@ -323,6 +399,7 @@ Module.register("MMM-WeatherForecastGraph", {
         ...baseOptions,
         plugins: {
           ...baseOptions.plugins,
+          datalabels: { display: false },
           legend: {
             display: true,
             position: "right",
@@ -333,11 +410,24 @@ Module.register("MMM-WeatherForecastGraph", {
               padding: 5,
               generateLabels: function (chart) {
                 const original = Chart.defaults.plugins.legend.labels.generateLabels(chart);
-                if (self.precipitationPeriods.length > 0) {
+                // Check if we have rain or snow periods to show in legend
+                const hasRain = self.precipitationPeriods.some(p => p.type === "rain");
+                const hasSnow = self.precipitationPeriods.some(p => p.type === "snow");
+
+                if (hasRain) {
                   original.push({
-                    text: "Amount",
+                    text: "Rain",
                     fillStyle: self.config.precipitationAmountColor + "66",
                     strokeStyle: self.config.precipitationAmountColor,
+                    lineWidth: 1,
+                    hidden: false
+                  });
+                }
+                if (hasSnow) {
+                  original.push({
+                    text: "Snow",
+                    fillStyle: self.config.snowAmountColor + "66",
+                    strokeStyle: self.config.snowAmountColor,
                     lineWidth: 1,
                     hidden: false
                   });
@@ -352,20 +442,48 @@ Module.register("MMM-WeatherForecastGraph", {
         },
         scales: {
           ...baseOptions.scales,
+          x: {
+            ...baseOptions.scales.x,
+            offset: false,  // Align grid lines with labels like line charts
+            grid: {
+              ...baseOptions.scales.x.grid,
+              offset: false
+            }
+          },
           y: {
             ...baseOptions.scales.y,
             min: 0,
-            max: 100,
-            title: {
-              display: true,
-              text: "Chance %",
-              color: "#999",
-              font: { size: 10 }
-            }
+            max: 100
           }
         }
       }
     });
+  },
+
+  getMidnightIndices: function (hours) {
+    const indices = [];
+    hours.forEach((h, idx) => {
+      const date = new Date(h.dt * 1000);
+      if (date.getHours() === 0) {
+        indices.push(idx);
+      }
+    });
+    return indices;
+  },
+
+  getMidnightAnnotations: function (hours) {
+    const annotations = {};
+    this.getMidnightIndices(hours).forEach((idx, i) => {
+      annotations["midnight" + i] = {
+        type: "line",
+        xMin: idx,
+        xMax: idx,
+        borderColor: "#555",
+        borderWidth: 1,
+        borderDash: [4, 4]
+      };
+    });
+    return annotations;
   },
 
   getChartOptions: function (title) {
@@ -400,11 +518,29 @@ Module.register("MMM-WeatherForecastGraph", {
           },
           ticks: {
             color: "#999",
-            maxTicksLimit: 12,
-            font: { size: 10 }
+            font: { size: 10 },
+            autoSkip: false,
+            maxRotation: 0,
+            callback: function (value, index) {
+              const label = this.getLabelForValue(value);
+              // Check if this is a day name using exact array match (not character detection)
+              const isDayLabel = DAY_NAMES.includes(label);
+              // At midnight, show day name on second line (first line blank)
+              if (isDayLabel) {
+                return ["", label];
+              }
+              // Show regular hours every 4 hours
+              if (index % 4 === 0) {
+                return label;
+              }
+              return null;
+            }
           }
         },
         y: {
+          afterFit: function (scaleInstance) {
+            scaleInstance.width = 40;  // Fixed width to align all charts
+          },
           grid: {
             display: this.config.showGridLines,
             color: "#333"
@@ -426,8 +562,7 @@ Module.register("MMM-WeatherForecastGraph", {
     const hour = date.getHours();
     // Show weekday abbreviation at midnight as day marker
     if (hour === 0) {
-      const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-      return days[date.getDay()];
+      return DAY_NAMES[date.getDay()];
     }
     const ampm = hour >= 12 ? "p" : "a";
     const hour12 = hour % 12 || 12;
