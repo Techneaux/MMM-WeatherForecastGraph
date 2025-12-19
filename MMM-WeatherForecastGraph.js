@@ -183,7 +183,7 @@ Module.register("MMM-WeatherForecastGraph", {
       const originalFit = chart.legend.fit;
       chart.legend.fit = function () {
         originalFit.call(this);
-        this.width = 120; // Fixed width for all legends
+        this.width = 140; // Fixed width for all legends
       };
     }
   },
@@ -262,7 +262,7 @@ Module.register("MMM-WeatherForecastGraph", {
       anchor: 'end',
       align: 'top',
       offset: 2,
-      font: { size: 11 },
+      font: { size: 13 },
       formatter: function(value) {
         return value !== null ? Math.round(value) + '°' : '';
       }
@@ -299,7 +299,7 @@ Module.register("MMM-WeatherForecastGraph", {
       anchor: 'end',
       align: 'top',
       offset: 2,
-      font: { size: 11 },
+      font: { size: 13 },
       formatter: function(value) {
         return value !== null ? Math.round(value) : '';
       }
@@ -381,7 +381,7 @@ Module.register("MMM-WeatherForecastGraph", {
           color: "#ccc",
           textStrokeColor: "rgba(0,0,0,0.8)",
           textStrokeWidth: 3,
-          font: { size: 11, weight: "normal" },
+          font: { size: 13, weight: "normal" },
           position: "center"
         }
       };
@@ -416,9 +416,9 @@ Module.register("MMM-WeatherForecastGraph", {
             position: "right",
             labels: {
               color: "#999",
-              font: { size: 12 },
-              boxWidth: 20,
-              padding: 5,
+              font: { size: 14 },
+              boxWidth: 24,
+              padding: 8,
               generateLabels: function (chart) {
                 const original = Chart.defaults.plugins.legend.labels.generateLabels(chart);
                 // Check if we have rain or snow periods to show in legend
@@ -508,16 +508,16 @@ Module.register("MMM-WeatherForecastGraph", {
           position: "right",
           labels: {
             color: "#999",
-            font: { size: 12 },
-            boxWidth: 20,
-            padding: 5
+            font: { size: 14 },
+            boxWidth: 24,
+            padding: 8
           }
         },
         title: {
           display: true,
           text: title,
           color: "#999",
-          font: { size: 14 }
+          font: { size: 16 }
         }
       },
       scales: {
@@ -529,7 +529,7 @@ Module.register("MMM-WeatherForecastGraph", {
           },
           ticks: {
             color: "#999",
-            font: { size: 12 },
+            font: { size: 14 },
             autoSkip: false,
             maxRotation: 0,
             callback: function (value, index) {
@@ -550,7 +550,7 @@ Module.register("MMM-WeatherForecastGraph", {
         },
         y: {
           afterFit: function (scaleInstance) {
-            scaleInstance.width = 45;  // Fixed width to align all charts
+            scaleInstance.width = 55;  // Fixed width to align all charts
           },
           grid: {
             display: this.config.showGridLines,
@@ -558,7 +558,7 @@ Module.register("MMM-WeatherForecastGraph", {
           },
           ticks: {
             color: "#999",
-            font: { size: 12 }
+            font: { size: 14 }
           },
           grace: "5%"
         }
