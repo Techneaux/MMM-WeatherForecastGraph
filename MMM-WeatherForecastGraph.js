@@ -80,10 +80,21 @@ Module.register("MMM-WeatherForecastGraph", {
   resume: function () {
     Log.info(this.name + ": Resuming");
     this.hidden = false;
-    if (this.weatherData) {
-      // Don't call updateDom() - reuse existing DOM and just render charts
-      // This avoids the flash from DOM recreation during page switches
+
+    // If there's an error, need to updateDom to show error state
+    if (this.errorMessage) {
+      this.updateDom(this.config.updateFadeSpeed);
+      return;
+    }
+
+    // Check if DOM exists (canvas element) and no pending render
+    const canvas = document.getElementById(this.identifier + "-temp-chart");
+    if (this.weatherData && canvas && !this.renderPending) {
+      // Reuse existing DOM - just render charts directly
       this.renderCharts();
+    } else if (this.weatherData) {
+      // DOM doesn't exist or render pending - need full DOM update
+      this.updateDom(this.config.updateFadeSpeed);
     }
   },
 
