@@ -38,6 +38,8 @@ Module.register("MMM-WeatherForecastGraph", {
   renderPending: false,
   // Error message from API failures
   errorMessage: null,
+  // Track hidden state for MMM-pages compatibility
+  hidden: false,
 
   getStyles: function () {
     return [this.file("MMM-WeatherForecastGraph.css")];
@@ -71,13 +73,17 @@ Module.register("MMM-WeatherForecastGraph", {
 
   suspend: function () {
     Log.info(this.name + ": Suspending, destroying charts");
+    this.hidden = true;
     this.destroyAllCharts();
   },
 
   resume: function () {
     Log.info(this.name + ": Resuming");
+    this.hidden = false;
     if (this.weatherData) {
-      this.updateDom(this.config.updateFadeSpeed);
+      // Don't call updateDom() - reuse existing DOM and just render charts
+      // This avoids the flash from DOM recreation during page switches
+      this.renderCharts();
     }
   },
 
@@ -88,10 +94,16 @@ Module.register("MMM-WeatherForecastGraph", {
       this.errorMessage = null;
       this.weatherData = payload.data;
       this.precipitationPeriods = payload.data.precipitationPeriods || [];
-      this.updateDom(this.config.updateFadeSpeed);
+      // Only update DOM if visible - if hidden, data will render on resume
+      if (!this.hidden) {
+        this.updateDom(this.config.updateFadeSpeed);
+      }
     } else if (notification === "WEATHER_GRAPH_ERROR") {
       this.errorMessage = payload.error;
-      this.updateDom(this.config.updateFadeSpeed);
+      // Only update DOM if visible
+      if (!this.hidden) {
+        this.updateDom(this.config.updateFadeSpeed);
+      }
     }
   },
 
