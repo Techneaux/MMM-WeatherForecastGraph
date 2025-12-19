@@ -173,6 +173,7 @@ Module.register("MMM-WeatherForecastGraph", {
   createChartContainer: function (type, height) {
     const container = document.createElement("div");
     container.className = "chart-container";
+    container.style.height = height + "px";  // Lock container height to prevent resize on chart render
     const canvas = document.createElement("canvas");
     canvas.id = this.identifier + "-" + type + "-chart";
     canvas.width = this.config.width;
