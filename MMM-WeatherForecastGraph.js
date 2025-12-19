@@ -38,6 +38,8 @@ Module.register("MMM-WeatherForecastGraph", {
   renderPending: false,
   // Error message from API failures
   errorMessage: null,
+  // Track hidden state for MMM-pages compatibility
+  hidden: false,
 
   getStyles: function () {
     return [this.file("MMM-WeatherForecastGraph.css")];
@@ -71,12 +73,27 @@ Module.register("MMM-WeatherForecastGraph", {
 
   suspend: function () {
     Log.info(this.name + ": Suspending, destroying charts");
+    this.hidden = true;
     this.destroyAllCharts();
   },
 
   resume: function () {
     Log.info(this.name + ": Resuming");
-    if (this.weatherData) {
+    this.hidden = false;
+
+    // If there's an error, need to updateDom to show error state
+    if (this.errorMessage) {
+      this.updateDom(this.config.updateFadeSpeed);
+      return;
+    }
+
+    // Check if DOM exists (canvas element) and no pending render
+    const canvas = document.getElementById(this.identifier + "-temp-chart");
+    if (this.weatherData && canvas && !this.renderPending) {
+      // Reuse existing DOM - just render charts directly
+      this.renderCharts();
+    } else if (this.weatherData) {
+      // DOM doesn't exist or render pending - need full DOM update
       this.updateDom(this.config.updateFadeSpeed);
     }
   },
@@ -88,10 +105,16 @@ Module.register("MMM-WeatherForecastGraph", {
       this.errorMessage = null;
       this.weatherData = payload.data;
       this.precipitationPeriods = payload.data.precipitationPeriods || [];
-      this.updateDom(this.config.updateFadeSpeed);
+      // Only update DOM if visible - if hidden, data will render on resume
+      if (!this.hidden) {
+        this.updateDom(this.config.updateFadeSpeed);
+      }
     } else if (notification === "WEATHER_GRAPH_ERROR") {
       this.errorMessage = payload.error;
-      this.updateDom(this.config.updateFadeSpeed);
+      // Only update DOM if visible
+      if (!this.hidden) {
+        this.updateDom(this.config.updateFadeSpeed);
+      }
     }
   },
 
