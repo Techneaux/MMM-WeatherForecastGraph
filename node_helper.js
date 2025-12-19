@@ -24,19 +24,28 @@ module.exports = NodeHelper.create({
     if (notification === "CONFIG") {
       const instanceId = payload.instanceId;
       const cacheKey = `${payload.latitude},${payload.longitude}`;
+      const cached = this.dataCache[cacheKey];
+      const cacheAge = cached ? Date.now() - cached.timestamp : Infinity;
+      const isCacheFresh = cacheAge < 60000; // Fresh if < 1 minute old
 
-      // Always send cached data immediately if available (for fresh page loads)
-      if (this.dataCache[cacheKey]) {
+      // Only send cached data if it's fresh (avoids flash from stale-then-fresh update)
+      if (cached && isCacheFresh) {
         this.sendSocketNotification("WEATHER_GRAPH_DATA", {
           instanceId: instanceId,
-          data: this.dataCache[cacheKey]
+          data: cached.data
         });
       }
 
       // Only start fetching/intervals if not already running for this instance
       if (!this.instances[instanceId]) {
         this.instances[instanceId] = payload;
-        this.fetchData(instanceId);
+
+        // Fetch immediately if cache is stale or missing
+        if (!isCacheFresh) {
+          this.fetchData(instanceId);
+        }
+
+        // Always schedule future updates
         this.scheduleUpdate(instanceId);
       }
     }
@@ -100,8 +109,11 @@ module.exports = NodeHelper.create({
       // Step 3: Process the data
       const processedData = this.processWeatherData(gridData.properties, config);
 
-      // Step 4: Cache the data for fresh page loads (reuse cacheKey from Step 1)
-      this.dataCache[cacheKey] = processedData;
+      // Step 4: Cache the data with timestamp for fresh page loads (reuse cacheKey from Step 1)
+      this.dataCache[cacheKey] = {
+        data: processedData,
+        timestamp: Date.now()
+      };
 
       // Step 5: Send to frontend with instanceId for filtering
       this.sendSocketNotification("WEATHER_GRAPH_DATA", {
