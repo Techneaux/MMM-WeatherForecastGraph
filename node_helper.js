@@ -36,16 +36,14 @@ module.exports = NodeHelper.create({
         });
       }
 
-      // Only start fetching/intervals if not already running for this instance
+      // Fetch immediately if cache is stale or missing (regardless of instance state)
+      if (!isCacheFresh) {
+        this.fetchData(instanceId);
+      }
+
+      // Only register and schedule updates if not already running for this instance
       if (!this.instances[instanceId]) {
         this.instances[instanceId] = payload;
-
-        // Fetch immediately if cache is stale or missing
-        if (!isCacheFresh) {
-          this.fetchData(instanceId);
-        }
-
-        // Always schedule future updates
         this.scheduleUpdate(instanceId);
       }
     }
