@@ -73,7 +73,17 @@ Module.register("MMM-WeatherForecastGraph", {
       instanceId: this.identifier
     });
 
-    // Start loading timeout - if no data after 45 seconds, show message and retry
+    // Start loading timeout
+    this.startLoadingTimeout();
+  },
+
+  // Start a 45-second timeout - if no data received, show message and retry
+  startLoadingTimeout: function () {
+    // Clear any existing timeout
+    if (this.loadingTimeoutId) {
+      clearTimeout(this.loadingTimeoutId);
+    }
+
     this.loadingTimeoutId = setTimeout(() => {
       if (!this.weatherData) {
         Log.warn(this.name + ": Loading timeout - retrying");
@@ -84,6 +94,8 @@ Module.register("MMM-WeatherForecastGraph", {
           instanceId: this.identifier
         });
         this.updateDom();
+        // Restart timeout for the retry attempt
+        this.startLoadingTimeout();
       }
     }, 45000);
   },
@@ -133,6 +145,11 @@ Module.register("MMM-WeatherForecastGraph", {
         this.updateDom(this.config.updateFadeSpeed);
       }
     } else if (notification === "WEATHER_GRAPH_ERROR") {
+      // Clear loading timeout since we received a response
+      if (this.loadingTimeoutId) {
+        clearTimeout(this.loadingTimeoutId);
+        this.loadingTimeoutId = null;
+      }
       this.errorMessage = payload.error;
       // Only update DOM if visible
       if (!this.hidden) {
@@ -154,7 +171,7 @@ Module.register("MMM-WeatherForecastGraph", {
 
     // Show API error if fetch failed
     if (this.errorMessage) {
-      wrapper.innerHTML = "<span class='dimmed'>Weather temporarily unavailable: " + this.errorMessage + " (retrying...)</span>";
+      wrapper.innerHTML = "<span class='dimmed'>Weather temporarily unavailable: " + this.errorMessage + "</span>";
       return wrapper;
     }
 

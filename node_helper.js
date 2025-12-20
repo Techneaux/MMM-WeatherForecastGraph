@@ -12,6 +12,8 @@ module.exports = NodeHelper.create({
   gridUrlCache: {},
   // Cache weather data by coordinates (for fresh page loads)
   dataCache: {},
+  // Track fetch in progress per instance to prevent concurrent fetches
+  fetchInProgress: {},
   // Retry settings
   maxRetries: 3,
   retryDelayMs: 5000,
@@ -63,10 +65,20 @@ module.exports = NodeHelper.create({
     const config = this.instances[instanceId];
     if (!config) return;
 
+    // Prevent concurrent fetches for the same instance (only check on initial fetch, not retries)
+    if (retryCount === 0 && this.fetchInProgress[instanceId]) {
+      Log.info(`${this.name}: Fetch already in progress for ${instanceId}, skipping`);
+      return;
+    }
+    if (retryCount === 0) {
+      this.fetchInProgress[instanceId] = true;
+    }
+
     const { latitude, longitude } = config;
 
     if (!latitude || !longitude) {
       Log.error(`${this.name}: latitude and longitude are required`);
+      this.fetchInProgress[instanceId] = false;
       return;
     }
 
@@ -115,6 +127,7 @@ module.exports = NodeHelper.create({
 
       // Step 5: Send to frontend with instanceId for filtering
       Log.info(`${this.name}: Sending weather data to frontend`);
+      this.fetchInProgress[instanceId] = false;
       this.sendSocketNotification("WEATHER_GRAPH_DATA", {
         instanceId: instanceId,
         data: processedData
@@ -132,6 +145,7 @@ module.exports = NodeHelper.create({
         }, delay);
       } else {
         // Send error notification to frontend after all retries exhausted
+        this.fetchInProgress[instanceId] = false;
         this.sendSocketNotification("WEATHER_GRAPH_ERROR", {
           instanceId: instanceId,
           error: error.message
