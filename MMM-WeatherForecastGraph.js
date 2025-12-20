@@ -40,6 +40,9 @@ Module.register("MMM-WeatherForecastGraph", {
   errorMessage: null,
   // Track hidden state for MMM-pages compatibility
   hidden: false,
+  // Loading timeout tracking
+  loadingTimedOut: false,
+  loadingTimeoutId: null,
 
   getStyles: function () {
     return [this.file("MMM-WeatherForecastGraph.css")];
@@ -69,6 +72,20 @@ Module.register("MMM-WeatherForecastGraph", {
       ...this.config,
       instanceId: this.identifier
     });
+
+    // Start loading timeout - if no data after 45 seconds, show message and retry
+    this.loadingTimeoutId = setTimeout(() => {
+      if (!this.weatherData) {
+        Log.warn(this.name + ": Loading timeout - retrying");
+        this.loadingTimedOut = true;
+        // Trigger immediate retry
+        this.sendSocketNotification("CONFIG", {
+          ...this.config,
+          instanceId: this.identifier
+        });
+        this.updateDom();
+      }
+    }, 45000);
   },
 
   suspend: function () {
@@ -102,6 +119,12 @@ Module.register("MMM-WeatherForecastGraph", {
     if (payload.instanceId !== this.identifier) return;
 
     if (notification === "WEATHER_GRAPH_DATA") {
+      // Clear loading timeout since we received data
+      if (this.loadingTimeoutId) {
+        clearTimeout(this.loadingTimeoutId);
+        this.loadingTimeoutId = null;
+      }
+      this.loadingTimedOut = false;
       this.errorMessage = null;
       this.weatherData = payload.data;
       this.precipitationPeriods = payload.data.precipitationPeriods || [];
@@ -131,12 +154,16 @@ Module.register("MMM-WeatherForecastGraph", {
 
     // Show API error if fetch failed
     if (this.errorMessage) {
-      wrapper.innerHTML = "<span class='dimmed'>Weather API error: " + this.errorMessage + "</span>";
+      wrapper.innerHTML = "<span class='dimmed'>Weather temporarily unavailable: " + this.errorMessage + " (retrying...)</span>";
       return wrapper;
     }
 
     if (!this.weatherData || !this.weatherData.hourly) {
-      wrapper.innerHTML = "<span class='dimmed'>Loading weather data...</span>";
+      if (this.loadingTimedOut) {
+        wrapper.innerHTML = "<span class='dimmed'>Weather service unavailable - retrying...</span>";
+      } else {
+        wrapper.innerHTML = "<span class='dimmed'>Fetching forecast...</span>";
+      }
       return wrapper;
     }
 

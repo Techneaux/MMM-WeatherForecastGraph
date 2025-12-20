@@ -114,6 +114,7 @@ module.exports = NodeHelper.create({
       };
 
       // Step 5: Send to frontend with instanceId for filtering
+      Log.info(`${this.name}: Sending weather data to frontend`);
       this.sendSocketNotification("WEATHER_GRAPH_DATA", {
         instanceId: instanceId,
         data: processedData
