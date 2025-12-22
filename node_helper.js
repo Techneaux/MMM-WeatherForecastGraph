@@ -90,7 +90,10 @@ module.exports = NodeHelper.create({
       if (!forecastGridDataUrl) {
         const pointsUrl = `https://api.weather.gov/points/${latitude},${longitude}`;
         const pointsResponse = await fetch(pointsUrl, {
-          headers: { "User-Agent": "MMM-WeatherForecastGraph/1.0" },
+          headers: {
+            "User-Agent": "MMM-WeatherForecastGraph/1.0",
+            "Accept": `application/geo+json;v=${Date.now()}`
+          },
           cache: "no-store"
         });
 
@@ -108,7 +111,10 @@ module.exports = NodeHelper.create({
 
       // Step 2: Get hourly forecast data
       const gridResponse = await fetch(forecastGridDataUrl, {
-        headers: { "User-Agent": "MMM-WeatherForecastGraph/1.0" },
+        headers: {
+          "User-Agent": "MMM-WeatherForecastGraph/1.0",
+          "Accept": `application/geo+json;v=${Date.now()}`
+        },
         cache: "no-store"
       });
 
